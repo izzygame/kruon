@@ -15,10 +15,10 @@
 
 | 阶段 | 状态 | 产出 |
 |---|---|---|
-| 1. Git 安全基线 | in_progress | 忽略项/敏感项审查、本地基线提交 |
-| 2. Rust 工具链 | pending | rustup/rustc/cargo、Tauri cargo check |
-| 3. OpenCode 运行核心 | pending | ProcessSupervisor、EventStore、路径策略、适配器 Host、Tauri API |
-| 4. Codex 联合审查 | pending | 编译、测试、安全与行为修正 |
+| 1. Git 安全基线 | complete | 忽略项/敏感项审查、本地基线提交 `2a4f27d` |
+| 2. Rust 工具链 | complete | rustup 1.29.0、rustc/cargo 1.97.0、aarch64；基线编译到项目宏 |
+| 3. OpenCode 运行核心 | complete | 独立工作树提交 `7095569`；OpenCode 搭骨架，Codex 接管并完成核心 |
+| 4. Codex 联合审查 | in_progress | 编译、测试、安全与行为修正 |
 | 5. 双适配器真实探针 | pending | 各一次受控只读执行、脱敏 fixtures、回放证据 |
 | 6. Hermes ADR 审查 | pending | ADR-001~005、失败模式审查与修订 |
 | 7. 研究材料与 W1 验收 | pending | 访谈包、端到端演示、完整验证报告 |
@@ -45,3 +45,11 @@
 |---|---|---|
 | 先前 rustup/Homebrew 安装均超时 | 2 | 网络已恢复；由 Mimo 只重试一次官方 rustup，失败即转 Codex 诊断 |
 | 敏感项扫描命令中的混合引号触发 zsh 解析错误 | 1 | 拆分为不含嵌套引号的文件名扫描与高置信模式扫描 |
+| `mimo run` 不接受 `--never-ask-questions` 子命令参数 | 1 | 该参数属于根命令；改为 `mimo --never-ask-questions run ...`，不启用危险跳过权限参数 |
+| Mimo 官方 rustup 安装在其 120 秒工具上限内仅下载约 6.3/11 MB | 1 | 按计划停止 Mimo 重试；Codex 改用官方直链、可续传下载并延长超时后安装 |
+| 校验后的安装器以 `kruon-rustup-init` 文件名运行，被 rustup 多调用代理机制误判 | 1 | 保留已校验二进制，恢复官方期望文件名 `rustup-init` 后运行 |
+| OpenCode 在 Rust 主安装尚未结束时违背指令并发执行 `rustup update`，留下孤儿安装进程 | 1 | 立即终止 OpenCode 会话及孤儿 rustup；确认其工作树零源码修改，只保留官方主安装进程，工具链稳定后重新派发 |
+| 初次 Tauri `cargo check` 在 `generate_context!` 因缺少 `icons/icon.png` 失败 | 1 | 工具链和依赖编译均成功；把现有 Tauri 图标配置缺口纳入 OpenCode crate 范围修复并回归 |
+| 运行时取消集成测试在进程已清理后挂起 | 1 | 线程采样确认 wait 线程持有 Child mutex 后递归进入取消收口；缩短锁作用域后再进入 finalize |
+| OpenCode 连续三次生成超长且无法解析的 EventStore 写入请求 | 3 | 按三次失败协议终止会话；保留已完成领域骨架，由 Codex 用小补丁完成实现和测试 |
+| 领域 Node 测试误用 Vitest 运行，26 个 node:test 子测试通过但 Vitest 报无 suite | 1 | 改用仓库原生 `node --test`，26/26 正式通过 |
