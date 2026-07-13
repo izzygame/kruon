@@ -1,0 +1,137 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kruon.dev/spikes/cli-adapters/capability_manifest.schema.json",
+  "title": "CapabilityManifest",
+  "description": "Schema for kruon adapter capability manifests (snapshots/*.json). Expresses schema_version, adapter/tool/version identity, approval_mode, interfaces, per-capability support status with evidence level, and notes. approval_mode MUST be honestly exposed per adapter: Codex exec = sandbox_policy_only (no per-action channel); Claude manual = per_action (inferred, not run-loop-proven).",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "adapter",
+    "tool_name",
+    "version",
+    "approval_mode",
+    "interfaces",
+    "capabilities",
+    "notes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Capability manifest schema version. Bumped on breaking change."
+    },
+    "adapter": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Logical adapter identifier (e.g. codex, claude)."
+    },
+    "tool_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Binary name (e.g. codex, claude)."
+    },
+    "version": {
+      "type": ["string", "null"],
+      "description": "Observed tool version; null if not yet captured."
+    },
+    "approval_mode": {
+      "type": "string",
+      "enum": ["per_action", "sandbox_policy_only", "none"],
+      "description": "Approval capability of this adapter. per_action = each high-risk action yields a bound approval request. sandbox_policy_only = no per-action channel; risk bounded by frozen pre-launch sandbox/policy. none = no approval gating. Codex exec is sandbox_policy_only; Claude manual targets per_action (inferred)."
+    },
+    "interfaces": {
+      "type": "array",
+      "description": "Declared interfaces this adapter exposes.",
+      "items": {
+        "type": "object",
+        "required": ["name", "kind", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Interface name, e.g. 'exec --json', '-p --output-format stream-json'."
+          },
+          "kind": {
+            "type": "string",
+            "description": "Interface kind, e.g. 'non_interactive_jsonl', 'bidirectional_stream', 'approval_mode'."
+          },
+          "evidence": {
+            "type": "string",
+            "enum": ["verified_help_text", "verified_help_text_present", "inferred", "run_loop_observed", "n/a"],
+            "description": "Evidence level for this interface declaration."
+          },
+          "approval_mode": {
+            "type": ["string", "null"],
+            "enum": ["per_action", "sandbox_policy_only", "none", "unknown", "n/a", null],
+            "description": "Approval mode this interface provides, if applicable."
+          },
+          "note": {
+            "type": "string",
+            "description": "Free-form notes about this interface."
+          },
+          "choices_documented": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Documented choices for this interface (e.g. permission mode values)."
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "description": "Per-capability support status. Keys are capability names (e.g. per_action_approval, sandbox_policy, structured_output).",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["supported", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "supported": {
+            "type": "boolean",
+            "description": "Whether this capability is supported."
+          },
+          "evidence": {
+            "type": "string",
+            "enum": ["verified", "inferred", "unverified", "unsupported"],
+            "description": "Evidence level: verified = demonstrated by real run / help-text capture; inferred = documented but not run-loop-proven; unverified = claimed but not yet checked; unsupported = confirmed absent."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Explanation of the evidence level or support status."
+          },
+          "forbidden_in_kruon": {
+            "type": "boolean",
+            "description": "True if kruon explicitly forbids using this capability."
+          },
+          "flags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Relevant CLI flags for this capability."
+          },
+          "modes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Available modes / values for this capability."
+          },
+          "format": {
+            "type": "string",
+            "description": "Output format description."
+          },
+          "via": {
+            "type": "string",
+            "description": "How this capability is accessed (e.g. CLI flag, subcommand)."
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Free-form notes about this capability snapshot."
+    }
+  }
+}

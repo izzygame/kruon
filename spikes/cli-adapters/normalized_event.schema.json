@@ -1,0 +1,161 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kruon.dev/spikes/cli-adapters/normalized_event.schema.json",
+  "title": "NormalizedAdapterEvent",
+  "description": "Single normalized event emitted by a kruon deep adapter (Codex / Claude Code). This is the contract both adapters stream into; 2D, 3D, audit and diagnostics only consume this shape. approval_mode MUST be honestly exposed per adapter and never upgraded to per_action without run-loop proof.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "adapter",
+    "event_id",
+    "event_type",
+    "phase",
+    "ts"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Normalized event schema version. Bumped on breaking change."
+    },
+    "adapter": {
+      "type": "string",
+      "enum": ["codex", "claude"],
+      "description": "Source CLI that produced the raw event."
+    },
+    "session_id": {
+      "type": ["string", "null"],
+      "description": "Upstream session id if known; null before session.created / init observed."
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable, unique id for this normalized event (adapter-scoped)."
+    },
+    "ts": {
+      "type": ["string", "number", "null"],
+      "description": "Event timestamp (ISO8601 string or epoch seconds); null if absent in raw."
+    },
+    "event_type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Normalized event type, e.g. session.start, assistant.message, tool.call, approval.request, artifact.file, task.complete, error, unknown."
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "setup",
+        "planning",
+        "running",
+        "tool_call",
+        "waiting_approval",
+        "approval_decision",
+        "artifact",
+        "terminal",
+        "degraded",
+        "uncertain"
+      ],
+      "description": "Coarse run phase this event belongs to. 'degraded' = parser produced a best-effort event but confidence is low; 'uncertain' = terminal state could not be determined and must not be disguised as completed."
+    },
+    "approval_mode": {
+      "type": "string",
+      "enum": ["per_action", "sandbox_policy_only", "none"],
+      "description": "Approval capability of the adapter run that produced this event. per_action = each high-risk action yields a bound approval request (Claude Code manual + stream-json, target). sandbox_policy_only = no per-action channel; risk is bounded by a frozen pre-launch sandbox/policy (Codex exec). none = no approval gating at all (never the default for high-risk work). Must match the run's capability manifest; never inferred from help text alone for per_action."
+    },
+    "approval_request": {
+      "type": "object",
+      "description": "Present only for event_type=approval.request. Carries the parameter fingerprint the user decision is bound to.",
+      "required": ["kind", "fingerprint"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "Action class, e.g. shell_command, file_write, network."
+        },
+        "fingerprint": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable hash of the bound parameters (command/args/paths). Parameter drift MUST invalidate this."
+        },
+        "params": {
+          "type": "object",
+          "description": "Redacted snapshot of the bound parameters."
+        },
+        "expires_at": {
+          "type": ["string", "number", "null"]
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "description": "Free-form textual/structured payload (assistant message, tool output, etc.). Already redacted.",
+      "additionalProperties": true
+    },
+    "artifact": {
+      "type": "object",
+      "description": "Present for event_type=artifact.*.",
+      "required": ["path", "in_workspace"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" },
+        "kind": { "type": ["string", "null"] },
+        "in_workspace": {
+          "type": "boolean",
+          "description": "False if path escapes the trusted workspace (policy violation candidate)."
+        }
+      }
+    },
+    "terminal_state": {
+      "type": "string",
+      "enum": ["completed", "failed", "cancelled", "forced_stop_required", "unknown"],
+      "description": "Required when phase=terminal. 'unknown' is a first-class terminal state for unreconciled runs; it must never be coerced to completed."
+    },
+    "exit_code": {
+      "type": ["integer", "null"]
+    },
+    "degraded": {
+      "type": "boolean",
+      "description": "True when the parser emitted a best-effort event with low confidence (malformed/unknown raw event)."
+    },
+    "source": {
+      "type": "object",
+      "description": "Provenance of the normalized event for replay/debugging.",
+      "required": ["raw_type"],
+      "additionalProperties": false,
+      "properties": {
+        "raw_type": {
+          "type": "string",
+          "description": "Original upstream type field (e.g. codex 'turn.completed', claude 'assistant'). 'unknown' when raw event could not be classified."
+        },
+        "raw_line": { "type": ["integer", "null"] },
+        "raw_json": { "type": ["string", "null"], "description": "Redacted raw JSON string, truncated." }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "phase": { "const": "terminal" } },
+        "required": ["phase"]
+      },
+      "then": { "required": ["terminal_state"] }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "approval.request" } },
+        "required": ["event_type"]
+      },
+      "then": { "required": ["approval_request"] }
+    },
+    {
+      "if": {
+        "properties": { "degraded": { "const": true } },
+        "required": ["degraded"]
+      },
+      "then": {
+        "properties": { "phase": { "enum": ["degraded", "uncertain", "terminal"] } }
+      }
+    }
+  ]
+}

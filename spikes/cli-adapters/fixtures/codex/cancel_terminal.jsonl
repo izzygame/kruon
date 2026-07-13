@@ -1,0 +1,3 @@
+{"type":"session.created","payload":{"session_id":"sess_cx_5","cwd":"/workspace"}}
+{"type":"message","payload":{"role":"assistant","content":[{"type":"text","text":"Working on a long-running task..."}]}}
+{"type":"command_executed","payload":{"command":["sleep","30"],"cwd":"/workspace","exit_code":null}}

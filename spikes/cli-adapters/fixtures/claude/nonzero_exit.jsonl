@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"sess_cl_4","cwd":"/workspace"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Running a tool that will fail."}]}}
+{"type":"result","subtype":"error","result":"tool execution failed","is_error":true,"total_cost_usd":0.05}

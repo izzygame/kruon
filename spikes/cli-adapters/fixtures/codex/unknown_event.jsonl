@@ -1,0 +1,4 @@
+{"type":"session.created","payload":{"session_id":"sess_cx_3","cwd":"/workspace"}}
+{"type":"new_future_event","payload":{"foo":"bar","whatever":[1,2,3]}}
+{"type":"message","payload":{"role":"assistant","content":[{"type":"text","text":"Continuing despite the unknown event."}]}}
+{"type":"turn.completed","payload":{"status":"completed","last_agent_message":"Done."}}

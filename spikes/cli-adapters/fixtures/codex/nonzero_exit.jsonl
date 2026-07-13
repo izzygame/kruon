@@ -1,0 +1,4 @@
+{"type":"session.created","payload":{"session_id":"sess_cx_4","cwd":"/workspace"}}
+{"type":"message","payload":{"role":"assistant","content":[{"type":"text","text":"Attempting a risky command."}]}}
+{"type":"error","payload":{"message":"command exited with code 2: permission denied"}}
+{"type":"turn.completed","payload":{"status":"failed","exit_code":2,"last_agent_message":"Failed."}}

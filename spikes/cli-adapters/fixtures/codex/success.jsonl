@@ -1,0 +1,5 @@
+{"type":"session.created","payload":{"session_id":"sess_cx_1","cwd":"/workspace"}}
+{"type":"message","payload":{"role":"assistant","content":[{"type":"text","text":"Listing files in the workspace."}]}}
+{"type":"command_executed","payload":{"command":["ls","-la"],"cwd":"/workspace","exit_code":0}}
+{"type":"file_update","payload":{"path":"src/notes.md","change":"create"}}
+{"type":"turn.completed","payload":{"status":"completed","last_agent_message":"Done. Created src/notes.md."}}

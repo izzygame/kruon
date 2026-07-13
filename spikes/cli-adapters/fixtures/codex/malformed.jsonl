@@ -1,0 +1,4 @@
+{"type":"session.created","payload":{"session_id":"sess_cx_2","cwd":"/workspace"}}
+this line is not valid json and must be reported as a ParseError
+{"type":"message","payload":{"role":"assistant","content":[{"type":"text","text":"Recovered after the bad line."}]}}
+{"type":"turn.completed","payload":{"status":"completed","last_agent_message":"Done."}}

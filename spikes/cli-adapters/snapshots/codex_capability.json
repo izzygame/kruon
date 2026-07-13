@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0",
+  "adapter": "codex",
+  "tool_name": "codex",
+  "version": "0.144.0-alpha.4",
+  "approval_mode": "sandbox_policy_only",
+  "interfaces": [
+    {
+      "name": "exec --json",
+      "kind": "non_interactive_jsonl",
+      "evidence": "verified_help_text",
+      "approval_mode": "sandbox_policy_only",
+      "note": "Primary deep-adapter surface. Emits JSONL events to stdout."
+    },
+    {
+      "name": "app-server",
+      "kind": "experimental_rpc",
+      "evidence": "verified_help_text_present",
+      "approval_mode": "unknown",
+      "note": "[experimental] per-action approval channel NOT confirmed; W1 decision gate (plan 3.4)."
+    },
+    {
+      "name": "exec-server",
+      "kind": "experimental_service",
+      "evidence": "verified_help_text_present",
+      "approval_mode": "unknown",
+      "note": "[EXPERIMENTAL] standalone exec-server; per-action approval channel NOT confirmed."
+    },
+    {
+      "name": "mcp-server",
+      "kind": "stdio_mcp",
+      "evidence": "verified_help_text_present",
+      "approval_mode": "n/a"
+    }
+  ],
+  "capabilities": {
+    "per_action_approval": {
+      "supported": false,
+      "evidence": "inferred",
+      "reason": "codex exec --help has NO --ask-for-approval (verified by help text, see evidence/codex_exec_help.txt). The top-level --ask-for-approval is documented for the interactive TUI only. app-server/exec-server MAY expose a per-action channel but this is NOT run-loop-proven."
+    },
+    "sandbox_policy": {
+      "supported": true,
+      "evidence": "verified",
+      "modes": ["read-only", "workspace-write", "danger-full-access"]
+    },
+    "structured_output": {
+      "supported": true,
+      "evidence": "verified",
+      "format": "JSONL (--json)"
+    },
+    "session_resume": {
+      "supported": true,
+      "evidence": "verified",
+      "via": "exec resume [--last]"
+    },
+    "dangerous_bypass": {
+      "supported": true,
+      "evidence": "verified",
+      "forbidden_in_kruon": true,
+      "flags": ["--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust"]
+    }
+  },
+  "notes": [
+    "approval_mode is declared sandbox_policy_only because codex exec (non-interactive) lacks a per-action approval flag; risk is bounded by the frozen --sandbox policy.",
+    "W1 decision gate (plan 3.4): spike app-server/exec-server for a stable per-action approval channel. If unproven, sandbox_policy_only stands and the UI must surface the difference vs Claude per_action (plan 5.2 exit standard).",
+    "version 0.144.0-alpha.4 observed via `codex --version` on 2026-07-11 (matches findings.md)."
+  ]
+}

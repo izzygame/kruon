@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "adapter": "claude",
+  "tool_name": "claude",
+  "version": "2.1.205",
+  "approval_mode": "per_action",
+  "interfaces": [
+    {
+      "name": "-p --output-format stream-json",
+      "kind": "non_interactive_stream",
+      "evidence": "verified_help_text",
+      "approval_mode": "per_action",
+      "note": "Primary deep-adapter surface. Realtime streaming output."
+    },
+    {
+      "name": "--input-format stream-json",
+      "kind": "bidirectional_stream",
+      "evidence": "verified_help_text",
+      "approval_mode": "per_action",
+      "note": "Required to answer permission_request upstream. The request/response round-trip is NOT run-loop-proven (R-01)."
+    },
+    {
+      "name": "--permission-mode manual",
+      "kind": "approval_mode",
+      "evidence": "verified_help_text",
+      "approval_mode": "per_action",
+      "choices_documented": ["acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan"]
+    },
+    {
+      "name": "--include-hook-events",
+      "kind": "hook_lifecycle",
+      "evidence": "verified_help_text"
+    },
+    {
+      "name": "--max-budget-usd",
+      "kind": "budget",
+      "evidence": "verified_help_text"
+    },
+    {
+      "name": "--allowedTools / --disallowedTools",
+      "kind": "tool_allow_deny",
+      "evidence": "verified_help_text"
+    }
+  ],
+  "capabilities": {
+    "per_action_approval": {
+      "supported": true,
+      "evidence": "inferred",
+      "reason": "--permission-mode manual + bidirectional stream-json are documented in help text. The permission_request stream-json message shape and the approval response round-trip are NOT help-text-proven and require a real run-loop spike (R-01). The spike parser models a representative permission_request message (event_parser.py, INFERRED)."
+    },
+    "sandbox_policy": {
+      "supported": false,
+      "evidence": "inferred",
+      "reason": "No codex-style --sandbox flag. Risk is bounded via --permission-mode, --allowedTools/--disallowedTools, --max-budget-usd and workspace trust."
+    },
+    "structured_output": {
+      "supported": true,
+      "evidence": "verified",
+      "format": "stream-json / json"
+    },
+    "session_resume": {
+      "supported": true,
+      "evidence": "verified",
+      "via": "--resume / --continue / --from-pr"
+    },
+    "dangerous_bypass": {
+      "supported": true,
+      "evidence": "verified",
+      "forbidden_in_kruon": true,
+      "flags": ["--dangerously-skip-permissions", "--allow-dangerously-skip-permissions"]
+    }
+  },
+  "notes": [
+    "approval_mode TARGETS per_action (manual mode). This is INFERRED, not run-loop-proven; the spike's parser models a representative permission_request message but real captures are needed (R-01).",
+    "Claude non-interactive -p skips the workspace trust prompt; kruon must perform workspace trust in its own onboarding (findings.md).",
+    "bypassPermissions mode is forbidden in kruon (DANGEROUS_FLAGS guard in capability_manifest.py).",
+    "version 2.1.205 observed via `claude --version` on 2026-07-11 (matches findings.md)."
+  ]
+}

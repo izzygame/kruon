@@ -1,0 +1,19 @@
+{
+  "name": "kruon",
+  "private": true,
+  "packageManager": "pnpm@11.8.0",
+  "scripts": {
+    "dev": "pnpm --filter @kruon/desktop dev",
+    "build": "pnpm --filter @kruon/desktop build",
+    "desktop:dev": "pnpm --filter @kruon/desktop tauri:dev",
+    "desktop:build": "pnpm --filter @kruon/desktop tauri:build",
+    "typecheck": "pnpm --filter @kruon/desktop typecheck",
+    "test": "pnpm --filter @kruon/desktop test",
+    "lint": "pnpm --filter @kruon/desktop lint",
+    "check-env": "node scripts/check-dev-env.mjs"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

@@ -1,0 +1,162 @@
+{
+  "description": "Synthetic fixture suite for the kruon adapter parser. Each fixture is a hand-authored stream representative of the DOCUMENTED upstream event shape (codex exec --json JSONL / claude stream-json). They are NOT live captures: real model calls are opt-in and disabled by default. Field names not confirmable from help text (e.g. claude permission_request) are tagged INFERRED in event_parser.py and README. Fixtures exercise: success, malformed JSON, unknown event, non-zero exit, cancel/terminal (abrupt end -> uncertain, supervisor upgrades to forced_stop_required).",
+  "schema_version": "1.0",
+  "fixtures": [
+    {
+      "id": "codex-success",
+      "adapter": "codex",
+      "path": "codex/success.jsonl",
+      "description": "clean codex exec run: session -> assistant msg -> tool call -> file artifact -> turn.completed(completed)",
+      "synthetic": true,
+      "expected": {
+        "terminal_state": "completed",
+        "exit_code": 0,
+        "parse_errors": 0,
+        "degraded_count": 0,
+        "events_min": 4,
+        "approval_mode": "sandbox_policy_only",
+        "must_contain_event_types": ["session.start", "tool.call", "artifact.file", "task.complete"]
+      }
+    },
+    {
+      "id": "codex-malformed",
+      "adapter": "codex",
+      "path": "codex/malformed.jsonl",
+      "description": "stream with one malformed (non-JSON) line; parser records ParseError and continues to a clean terminal",
+      "synthetic": true,
+      "expected": {
+        "terminal_state": "completed",
+        "exit_code": 0,
+        "parse_errors": 1,
+        "degraded_count": 0,
+        "events_min": 3,
+        "approval_mode": "sandbox_policy_only"
+      }
+    },
+    {
+      "id": "codex-unknown-event",
+      "adapter": "codex",
+      "path": "codex/unknown_event.jsonl",
+      "description": "valid JSON line with an unrecognized type -> degraded event with raw preserved; run still completes",
+      "synthetic": true,
+      "expected": {
+        "terminal_state": "completed",
+        "exit_code": 0,
+        "parse_errors": 0,
+        "degraded_count": 1,
+        "events_min": 3,
+        "approval_mode": "sandbox_policy_only",
+        "must_contain_event_types": ["unknown"]
+      }
+    },
+    {
+      "id": "codex-nonzero-exit",
+      "adapter": "codex",
+      "path": "codex/nonzero_exit.jsonl",
+      "description": "error event + turn.completed(failed, exit_code 2) -> terminal failed",
+      "synthetic": true,
+      "expected": {
+        "terminal_state": "failed",
+        "exit_code": 2,
+        "parse_errors": 0,
+        "degraded_count": 1,
+        "events_min": 3,
+        "approval_mode": "sandbox_policy_only"
+      }
+    },
+    {
+      "id": "codex-cancel-terminal",
+      "adapter": "codex",
+      "path": "codex/cancel_terminal.jsonl",
+      "description": "run cancelled mid-flight: stream ends with a long-running tool call and NO turn.completed -> observed terminal unknown (uncertain); supervisor resolve_cancel_state upgrades to forced_stop_required after deadline",
+      "synthetic": true,
+      "expected": {
+        "terminal_state": "unknown",
+        "exit_code": null,
+        "parse_errors": 0,
+        "degraded_count": 0,
+        "events_min": 2,
+        "approval_mode": "sandbox_policy_only",
+        "uncertain": true
+      }
+    },
+    {
+      "id": "claude-success",
+      "adapter": "claude",
+      "path": "claude/success.jsonl",
+      "description": "clean claude -p stream-json run with a permission_request (per_action) -> approved tool call -> result(success)",
+      "synthetic": true,
+      "expected": {
+        "terminal_state": "completed",
+        "exit_code": 0,
+        "parse_errors": 0,
+        "degraded_count": 0,
+        "events_min": 5,
+        "approval_mode": "per_action",
+        "must_contain_event_types": ["session.start", "approval.request", "tool.call", "task.complete"]
+      }
+    },
+    {
+      "id": "claude-malformed",
+      "adapter": "claude",
+      "path": "claude/malformed.jsonl",
+      "description": "stream with one malformed JSON line; parser records ParseError and continues to a clean terminal",
+      "synthetic": true,
+      "expected": {
+        "terminal_state": "completed",
+        "exit_code": 0,
+        "parse_errors": 1,
+        "degraded_count": 0,
+        "events_min": 2,
+        "approval_mode": "per_action"
+      }
+    },
+    {
+      "id": "claude-unknown-event",
+      "adapter": "claude",
+      "path": "claude/unknown_event.jsonl",
+      "description": "valid JSON line with an unrecognized type -> degraded event; run still completes",
+      "synthetic": true,
+      "expected": {
+        "terminal_state": "completed",
+        "exit_code": 0,
+        "parse_errors": 0,
+        "degraded_count": 1,
+        "events_min": 2,
+        "approval_mode": "per_action",
+        "must_contain_event_types": ["unknown"]
+      }
+    },
+    {
+      "id": "claude-nonzero-exit",
+      "adapter": "claude",
+      "path": "claude/nonzero_exit.jsonl",
+      "description": "result(subtype=error, is_error=true) -> terminal failed, exit_code 1",
+      "synthetic": true,
+      "expected": {
+        "terminal_state": "failed",
+        "exit_code": 1,
+        "parse_errors": 0,
+        "degraded_count": 0,
+        "events_min": 2,
+        "approval_mode": "per_action"
+      }
+    },
+    {
+      "id": "claude-cancel-terminal",
+      "adapter": "claude",
+      "path": "claude/cancel_terminal.jsonl",
+      "description": "run cancelled mid-flight: stream ends mid tool_use with NO result -> observed terminal unknown (uncertain); supervisor upgrades to forced_stop_required after deadline",
+      "synthetic": true,
+      "expected": {
+        "terminal_state": "unknown",
+        "exit_code": null,
+        "parse_errors": 0,
+        "degraded_count": 0,
+        "events_min": 2,
+        "approval_mode": "per_action",
+        "uncertain": true
+      }
+    }
+  ]
+}
