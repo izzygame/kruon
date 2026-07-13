@@ -10,6 +10,9 @@
 - Rust stable 已安装为 1.97.0（2026-07-07），rustup 1.29.0，host 为 `aarch64-apple-darwin`。
 - 基线 `cargo check` 已完成 crates.io 依赖下载和 Tauri 依赖编译，唯一项目级错误是仓库原本缺少 Tauri 默认 `icons/icon.png`。
 - OpenCode 第二次会话成功写入 Tauri 配置、依赖和领域骨架，但其 DeepSeek 工具写入在 EventStore 大文件上连续失败；Codex 接管后完成全部核心。
-- Rust 核心当前 21 项测试通过：19 个库测试与 2 个探针守卫测试；另有 `cargo check --all-targets`、rustfmt、合成探针与项目路径拒绝验证。
+- Rust 核心最终 25 项测试通过：23 个库测试与 2 个探针守卫测试；另有 `cargo check --all-targets`、rustfmt、合成探针与项目路径拒绝验证。
 - 运行时取消集成测试曾发现真实 Child mutex 重入死锁，已通过线程采样定位并修复；正常/强停/超时/重复取消测试均通过。
 - 全仓回归：adapter 99、Codex protocol 49、domain 26、desktop 3 全部通过，10/10 fixtures、类型检查和前端构建通过。
+- Codex 与 Claude 已各执行一次真实只读探针；分别得到 40 与 28 个归一化事件，终态均为 completed，临时夹具指纹未变化；脱敏捕获已保存并标注 CLI/协议/schema 版本。
+- Hermes 使用 Coding Plan `deepseek-v4-flash-260425` 完成只读审查；有效问题是宿主环境继承、IPC 内部错误泄漏和脱敏键覆盖，均已修复。SQLite 单连接被保留为 W1 一致性权衡。
+- W1 仍不具备网络出口隔离、`setsid` 防逃逸、运行期路径 TOCTOU 防护和 Rust 产品路径逐工具审批；这些边界已进入 ADR 和验收报告。

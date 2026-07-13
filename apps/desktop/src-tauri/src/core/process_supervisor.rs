@@ -79,6 +79,8 @@ impl ProcessSupervisor {
         command
             .args(&plan.args)
             .current_dir(&plan.cwd)
+            .env_clear()
+            .envs(plan.env.iter().map(|(key, value)| (key, value)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -127,6 +129,7 @@ impl ProcessSupervisor {
                 let _ = self.cancel(run_id, "stdin_write_failed");
                 return Err(error.into());
             }
+            drop(stdin);
         }
         Ok(ProcessHandle { pid, pgid })
     }
@@ -433,6 +436,7 @@ mod tests {
             args: vec!["-c".into(), script.into()],
             cwd: PathBuf::from("/tmp"),
             prompt_stdin: String::new(),
+            env: vec![("PATH".into(), "/usr/bin:/bin".into())],
         }
     }
 
@@ -448,6 +452,23 @@ mod tests {
     }
 
     #[test]
+    fn closes_stdin_and_does_not_inherit_unlisted_secrets() {
+        let supervisor = ProcessSupervisor::new(Duration::from_millis(100), Duration::from_secs(1));
+        let mut plan = shell_plan(
+            "IFS= read -r prompt; IFS= read -r trailing || printf 'eof:%s:%s\\n' \"$prompt\" \"${KRUON_TEST_SECRET-unset}\"",
+        );
+        plan.prompt_stdin = "hello".into();
+        unsafe { std::env::set_var("KRUON_TEST_SECRET", "must-not-leak") };
+        supervisor.spawn("stdin-eof", plan).unwrap();
+        let outcome = supervisor
+            .wait("stdin-eof", Duration::from_secs(2))
+            .unwrap();
+        unsafe { std::env::remove_var("KRUON_TEST_SECRET") };
+        assert_eq!(outcome.status, RunStatus::Completed);
+        assert_eq!(outcome.stdout_lines, vec!["eof:hello:unset"]);
+    }
+
+    #[test]
     fn cancellation_is_idempotent_and_wins_over_exit_code() {
         let supervisor = ProcessSupervisor::new(Duration::from_millis(100), Duration::from_secs(1));
         supervisor.spawn("cancel", shell_plan("sleep 30")).unwrap();
@@ -455,6 +476,23 @@ mod tests {
         let second = supervisor.cancel("cancel", "user").unwrap();
         assert_eq!(first.status, RunStatus::Cancelled);
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn concurrent_cancel_and_wait_produce_one_stable_outcome() {
+        let supervisor = Arc::new(ProcessSupervisor::new(
+            Duration::from_millis(100),
+            Duration::from_secs(1),
+        ));
+        supervisor.spawn("race", shell_plan("sleep 30")).unwrap();
+        let waiter = {
+            let supervisor = Arc::clone(&supervisor);
+            thread::spawn(move || supervisor.wait("race", Duration::from_secs(2)).unwrap())
+        };
+        let cancelled = supervisor.cancel("race", "user").unwrap();
+        let waited = waiter.join().unwrap();
+        assert_eq!(cancelled, waited);
+        assert_eq!(cancelled.status, RunStatus::Cancelled);
     }
 
     #[test]

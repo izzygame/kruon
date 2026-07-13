@@ -6,7 +6,7 @@ A local-first desktop workspace for AI coding agents.
 
 - **Node.js** >= 20
 - **pnpm** >= 9
-- **Rust** (for Tauri desktop build — see [Known Blocks](#known-blocks))
+- **Rust stable** (for the Tauri desktop and W1 runtime core)
 
 ## Getting started
 
@@ -27,7 +27,11 @@ pnpm check-env    # Environment dependency check
 kruon/
 ├── apps/
 │   └── desktop/        # Vite + React + TypeScript frontend
-│       └── src-tauri/  # Tauri 2 Rust shell (blocked locally)
+│       └── src-tauri/  # Tauri 2 Rust runtime, SQLite events and CLI adapters
+├── docs/
+│   ├── adr/            # Architecture decisions
+│   ├── research/       # User research kits
+│   └── verification/   # W1 acceptance evidence
 ├── scripts/
 │   └── check-dev-env.mjs
 ├── .github/workflows/  # CI (Node gate + Tauri gate)
@@ -35,15 +39,16 @@ kruon/
 └── pnpm-workspace.yaml
 ```
 
-## Known blocks
+## Current boundaries
 
-- **Rust / Cargo** are not installed on the current development machine.
-  Tauri 2 `src-tauri/` configuration is structurally correct but cannot be built locally.
-  CI's `tauri-checks` job will run after Rust is installed in the runner.
-- Native bundling is intentionally disabled until approved kruon application icons are
-  generated from the brand source and added to `src-tauri/icons/`.
-- The desktop frontend (Vite + React) can be fully developed, type-checked, tested,
-  and built without Rust.
+- W1 supports controlled local read-only Codex and Claude runs; it does not claim
+  network-egress, container, or Seatbelt isolation.
+- The Rust product path does not yet expose per-tool approval fingerprints.
+- Native icon files are technical placeholders pending approved brand export.
+- Actual 3–5 person user interviews depend on product-side recruitment and consent.
+
+See [W1 acceptance](docs/verification/W1-acceptance-report-2026-07-14.md) and
+[security review](docs/security/w1-runtime-security-review-2026-07-14.md).
 
 ## Verification
 
@@ -52,4 +57,5 @@ kruon/
 | `pnpm typecheck`   | No type errors                       |
 | `pnpm test`        | All tests pass                       |
 | `pnpm build`       | Produces `apps/desktop/dist/`        |
-| `pnpm check-env`   | Node/pnpm/Tauri CLI ✓, Rust/Cargo ✗ |
+| `pnpm check-env`   | Node/pnpm/Tauri CLI/Rust/Cargo ✓    |
+| `cargo test --all-targets` (in `apps/desktop/src-tauri`) | Rust core and probes pass |

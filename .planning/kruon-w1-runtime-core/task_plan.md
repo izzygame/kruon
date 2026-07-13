@@ -18,10 +18,10 @@
 | 1. Git 安全基线 | complete | 忽略项/敏感项审查、本地基线提交 `2a4f27d` |
 | 2. Rust 工具链 | complete | rustup 1.29.0、rustc/cargo 1.97.0、aarch64；基线编译到项目宏 |
 | 3. OpenCode 运行核心 | complete | 独立工作树提交 `7095569`；OpenCode 搭骨架，Codex 接管并完成核心 |
-| 4. Codex 联合审查 | in_progress | 编译、测试、安全与行为修正 |
-| 5. 双适配器真实探针 | pending | 各一次受控只读执行、脱敏 fixtures、回放证据 |
-| 6. Hermes ADR 审查 | pending | ADR-001~005、失败模式审查与修订 |
-| 7. 研究材料与 W1 验收 | pending | 访谈包、端到端演示、完整验证报告 |
+| 4. Codex 联合审查 | complete | 环境白名单、IPC/持久化错误脱敏、stdin EOF 与取消竞态加固 |
+| 5. 双适配器真实探针 | complete | 各一次受控只读执行、脱敏 fixtures、回放证据 |
+| 6. Hermes ADR 审查 | complete | DeepSeek Flash 失败模式审查、ADR-001~005 与 Codex 处置 |
+| 7. 研究材料与 W1 验收 | complete | 访谈包与技术验收报告；实际访谈等待产品方招募 |
 
 ## 已锁定决策
 
@@ -53,3 +53,8 @@
 | 运行时取消集成测试在进程已清理后挂起 | 1 | 线程采样确认 wait 线程持有 Child mutex 后递归进入取消收口；缩短锁作用域后再进入 finalize |
 | OpenCode 连续三次生成超长且无法解析的 EventStore 写入请求 | 3 | 按三次失败协议终止会话；保留已完成领域骨架，由 Codex 用小补丁完成实现和测试 |
 | 领域 Node 测试误用 Vitest 运行，26 个 node:test 子测试通过但 Vitest 报无 suite | 1 | 改用仓库原生 `node --test`，26/26 正式通过 |
+| live fixture 敏感项扫描使用了 ripgrep 默认引擎不支持的 negative lookahead | 1 | 改用 `rg --pcre2` 重新执行同一只读扫描 |
+| 在尚未创建的 Hermes worktree 路径中启动组合命令，Git 找不到仓库 | 1 | 从主仓库先单独创建 review worktree，再在已存在目录启动 Hermes |
+| 在 Tauri 子目录执行回归时误用仓库根相对路径，`rg` 找不到目标 | 1 | 改为相对当前工作目录的路径后重跑，源码未受影响 |
+| 全仓并行回归首轮 Rust fmt 检查发现一处新错误映射换行差异 | 1 | 运行 rustfmt 后重跑，25 项 Rust 测试与 all-targets check 全部通过 |
+| live fixture 组合扫描命令包含复杂引号导致 zsh 解析失败 | 1 | 拆成 JSON 状态校验与无复杂引号的高置信路径/密钥扫描 |

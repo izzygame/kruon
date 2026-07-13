@@ -78,7 +78,7 @@ impl RuntimeCore {
                     "run.spawn_failed",
                     EventPhase::Terminal,
                     Some(TerminalState::Failed),
-                    serde_json::json!({"error": error.to_string()}),
+                    serde_json::json!({"error_code": public_error_code(&error)}),
                 );
                 return Err(error);
             }
@@ -274,10 +274,7 @@ pub fn start_run(
     state: tauri::State<'_, Arc<RuntimeCore>>,
     request: StartRunRequest,
 ) -> Result<RunSnapshot, String> {
-    state
-        .inner()
-        .start(request)
-        .map_err(|error| error.to_string())
+    state.inner().start(request).map_err(public_error)
 }
 
 #[tauri::command]
@@ -285,7 +282,7 @@ pub fn cancel_run(
     state: tauri::State<'_, Arc<RuntimeCore>>,
     run_id: String,
 ) -> Result<RunSnapshot, String> {
-    state.cancel(&run_id).map_err(|error| error.to_string())
+    state.cancel(&run_id).map_err(public_error)
 }
 
 #[tauri::command]
@@ -293,7 +290,7 @@ pub fn get_run(
     state: tauri::State<'_, Arc<RuntimeCore>>,
     run_id: String,
 ) -> Result<RunSnapshot, String> {
-    state.get_run(&run_id).map_err(|error| error.to_string())
+    state.get_run(&run_id).map_err(public_error)
 }
 
 #[tauri::command]
@@ -304,7 +301,7 @@ pub fn list_events(
 ) -> Result<Vec<EventEnvelope>, String> {
     state
         .list_events(&run_id, after_sequence.unwrap_or(0))
-        .map_err(|error| error.to_string())
+        .map_err(public_error)
 }
 
 #[tauri::command]
@@ -312,7 +309,35 @@ pub fn replay_run(
     state: tauri::State<'_, Arc<RuntimeCore>>,
     run_id: String,
 ) -> Result<ReplayResult, String> {
-    state.replay_run(&run_id).map_err(|error| error.to_string())
+    state.replay_run(&run_id).map_err(public_error)
+}
+
+fn public_error(error: KruonError) -> String {
+    let code = public_error_code(&error);
+    let message = match error {
+        KruonError::NotFound(_) => "run was not found",
+        KruonError::Conflict(_) => "request conflicts with current run state",
+        KruonError::PathPolicy(_) => "path is outside the allowed workspace",
+        KruonError::InvalidArgument(_) => "request is invalid",
+        KruonError::Process(_) => "local process operation failed",
+        KruonError::Adapter(_) => "adapter operation failed",
+        KruonError::Store(_) | KruonError::Serialization(_) => "local event store operation failed",
+        KruonError::Io(_) => "local I/O operation failed",
+    };
+    format!("{code}: {message}")
+}
+
+fn public_error_code(error: &KruonError) -> &'static str {
+    match error {
+        KruonError::NotFound(_) => "not_found",
+        KruonError::Conflict(_) => "conflict",
+        KruonError::PathPolicy(_) => "path_policy_violation",
+        KruonError::InvalidArgument(_) => "invalid_argument",
+        KruonError::Process(_) => "process_error",
+        KruonError::Adapter(_) => "adapter_error",
+        KruonError::Store(_) | KruonError::Serialization(_) => "store_error",
+        KruonError::Io(_) => "internal_error",
+    }
 }
 
 #[cfg(test)]
@@ -323,6 +348,24 @@ mod tests {
 
     use super::*;
     use crate::core::domain::{AdapterKind, RunStatus};
+
+    #[test]
+    fn public_errors_do_not_expose_paths_or_internal_details() {
+        let secret_path = "/Users/example/private/project";
+        let error = public_error(KruonError::PathPolicy(secret_path.into()));
+        assert_eq!(
+            error,
+            "path_policy_violation: path is outside the allowed workspace"
+        );
+        assert!(!error.contains(secret_path));
+
+        let store_error = public_error(KruonError::Store("database /secret/db is corrupt".into()));
+        assert_eq!(
+            store_error,
+            "store_error: local event store operation failed"
+        );
+        assert!(!store_error.contains("/secret/db"));
+    }
 
     fn environment_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();

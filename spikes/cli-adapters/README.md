@@ -46,6 +46,7 @@ python3 probe.py --allow-model-call \
 - `snapshots/`：当前版本的能力快照（含 schema_version）。
 - `evidence/`：本机 version/help 证据。
 - `fixtures/`：10 组 synthetic JSONL，覆盖成功、畸形 JSON、未知事件、非零退出和取消/未知终态。
+- `fixtures/live/`：W1 受控真实只读调用的脱敏归一化捕获；与 synthetic fixtures 分开，不参与 10/10 自测计数。
 - `tests/`：unittest 套件（test_adapter_protocol.py、test_capability_manifest.py、test_capability_schema.py、test_event_parser.py、test_fixtures.py）。
 
 ## 验证命令

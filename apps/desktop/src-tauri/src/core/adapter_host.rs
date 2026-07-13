@@ -14,6 +14,7 @@ pub struct LaunchPlan {
     pub args: Vec<String>,
     pub cwd: PathBuf,
     pub prompt_stdin: String,
+    pub env: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -71,6 +72,7 @@ impl AdapterHost {
             args,
             cwd: PathBuf::from(workspace),
             prompt_stdin: prompt.to_owned(),
+            env: allowed_environment(),
         })
     }
 
@@ -122,6 +124,30 @@ impl AdapterHost {
             }),
         )
     }
+}
+
+const ALLOWED_ENVIRONMENT_KEYS: &[&str] = &[
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "COLORTERM",
+    "NO_COLOR",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "CODEX_HOME",
+    "CLAUDE_CONFIG_DIR",
+];
+
+fn allowed_environment() -> Vec<(String, String)> {
+    ALLOWED_ENVIRONMENT_KEYS
+        .iter()
+        .filter_map(|key| std::env::var(key).ok().map(|value| ((*key).into(), value)))
+        .collect()
 }
 
 fn source_type(value: &Value) -> Option<&str> {
@@ -212,7 +238,16 @@ fn is_secret_key(key: &str) -> bool {
             | "secret"
             | "credential"
             | "credentials"
-    )
+            | "private_key"
+            | "ssh_key"
+            | "session_key"
+            | "client_secret"
+    ) || key.ends_with("_token")
+        || key.ends_with("_secret")
+        || key.ends_with("_password")
+        || key.ends_with("_api_key")
+        || key.contains("credential")
+        || key.contains("authorization")
 }
 
 #[cfg(test)]
@@ -232,6 +267,14 @@ mod tests {
             .any(|pair| pair == ["--sandbox", "read-only"]));
         assert!(!codex.args.iter().any(|arg| arg.contains("sensitive")));
         assert!(!codex.args.iter().any(|arg| arg.contains("bypass")));
+        let env_keys = codex
+            .env
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .collect::<Vec<_>>();
+        assert!(!env_keys.contains(&"OPENAI_API_KEY"));
+        assert!(!env_keys.contains(&"ANTHROPIC_API_KEY"));
+        assert!(!env_keys.contains(&"SSH_AUTH_SOCK"));
 
         let claude = host
             .launch_plan(AdapterKind::Claude, Path::new("/tmp"), "sensitive prompt")
@@ -257,6 +300,22 @@ mod tests {
         let source = &event.payload["source"];
         assert_eq!(source["api_key"], "[REDACTED]");
         assert_eq!(source["nested"]["token"], "[REDACTED]");
+    }
+
+    #[test]
+    fn redacts_secret_suffixes_without_redacting_unrelated_keys() {
+        let event = AdapterHost.normalize_line(
+            AdapterKind::Codex,
+            "run-1",
+            1,
+            r#"{"type":"item.completed","oauth_token":"a","client-secret":"b","database_password":"c","private_key":"d","keyboard":"keep"}"#,
+        );
+        let source = &event.payload["source"];
+        assert_eq!(source["oauth_token"], "[REDACTED]");
+        assert_eq!(source["client-secret"], "[REDACTED]");
+        assert_eq!(source["database_password"], "[REDACTED]");
+        assert_eq!(source["private_key"], "[REDACTED]");
+        assert_eq!(source["keyboard"], "keep");
     }
 
     #[test]
