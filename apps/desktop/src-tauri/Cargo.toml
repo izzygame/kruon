@@ -7,7 +7,7 @@ edition = "2021"
 
 [lib]
 name = "kruon_desktop_lib"
-crate-type = ["lib", "cdylib", "staticlib"]
+crate-type = ["rlib", "cdylib", "staticlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -16,3 +16,16 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rusqlite = { version = "0.38", features = ["bundled"] }
+thiserror = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+sha2 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "w1_probe"
+path = "src/bin/w1_probe.rs"
