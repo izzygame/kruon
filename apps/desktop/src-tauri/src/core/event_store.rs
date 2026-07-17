@@ -2,8 +2,9 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 
+use super::database::{ensure_supported_schema, open_local_database, run_migration};
 use super::domain::{
     AdapterKind, EventEnvelope, EventPhase, ReplayResult, RunSnapshot, RunStatus, StartRunRequest,
     TerminalState,
@@ -16,13 +17,8 @@ pub struct EventStore {
 
 impl EventStore {
     pub fn open(path: impl AsRef<Path>) -> KruonResult<Self> {
-        if let Some(parent) = path.as_ref().parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let connection = Connection::open_with_flags(
-            path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-        )?;
+        let connection = open_local_database(path)?;
+        ensure_supported_schema(&connection)?;
         Self::configure(&connection, true)?;
         let store = Self {
             connection: Mutex::new(connection),
@@ -51,9 +47,10 @@ impl EventStore {
     }
 
     fn migrate(&self) -> KruonResult<()> {
-        let connection = self.connection.lock().expect("event store mutex poisoned");
-        connection.execute_batch(
-            "CREATE TABLE IF NOT EXISTS schema_migrations (
+        let mut connection = self.connection.lock().expect("event store mutex poisoned");
+        run_migration(&mut connection, |transaction| {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS schema_migrations (
                 version INTEGER PRIMARY KEY,
                 applied_at TEXT NOT NULL
             );
@@ -64,6 +61,7 @@ impl EventStore {
                 working_directory TEXT NOT NULL,
                 policy_id TEXT,
                 prompt_hash TEXT NOT NULL,
+                launch_fingerprint TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL,
                 terminal_state TEXT,
                 last_sequence INTEGER NOT NULL DEFAULT 0,
@@ -89,8 +87,27 @@ impl EventStore {
                 ON events(run_id, sequence);
             INSERT OR IGNORE INTO schema_migrations(version, applied_at)
                 VALUES (1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));",
-        )?;
-        Ok(())
+            )?;
+            let has_launch_fingerprint = {
+                let mut columns = transaction.prepare("PRAGMA table_info(runs)")?;
+                let rows = columns.query_map([], |row| row.get::<_, String>(1))?;
+                rows.collect::<Result<Vec<_>, _>>()?
+                    .iter()
+                    .any(|name| name == "launch_fingerprint")
+            };
+            if !has_launch_fingerprint {
+                transaction.execute(
+                    "ALTER TABLE runs ADD COLUMN launch_fingerprint TEXT NOT NULL DEFAULT ''",
+                    [],
+                )?;
+            }
+            transaction.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at)
+                 VALUES (2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+                [],
+            )?;
+            Ok(())
+        })
     }
 
     pub fn create_run(
@@ -99,6 +116,7 @@ impl EventStore {
         request: &StartRunRequest,
         workspace_root: &Path,
         working_directory: &Path,
+        launch_fingerprint: &str,
     ) -> KruonResult<RunSnapshot> {
         let now = chrono::Utc::now().to_rfc3339();
         let snapshot = RunSnapshot {
@@ -113,6 +131,7 @@ impl EventStore {
             updated_at: now,
             last_sequence: 0,
             prompt_hash: request.prompt_hash(),
+            launch_fingerprint: launch_fingerprint.to_owned(),
             pid: None,
             pgid: None,
         };
@@ -120,8 +139,8 @@ impl EventStore {
         connection.execute(
             "INSERT INTO runs(
                 run_id, adapter, workspace_root, working_directory, policy_id, prompt_hash,
-                status, terminal_state, last_sequence, created_at, updated_at, pid, pgid
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, 0, ?8, ?9, NULL, NULL)",
+                launch_fingerprint, status, terminal_state, last_sequence, created_at, updated_at, pid, pgid
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, 0, ?9, ?10, NULL, NULL)",
             params![
                 snapshot.run_id,
                 encode(&snapshot.adapter)?,
@@ -129,6 +148,7 @@ impl EventStore {
                 snapshot.working_directory,
                 snapshot.policy_id,
                 snapshot.prompt_hash,
+                snapshot.launch_fingerprint,
                 encode(&snapshot.status)?,
                 snapshot.created_at,
                 snapshot.updated_at,
@@ -243,13 +263,44 @@ impl EventStore {
             .query_row(
                 "SELECT run_id, adapter, workspace_root, working_directory, policy_id,
                         status, terminal_state, created_at, updated_at, last_sequence,
-                        prompt_hash, pid, pgid
+                        prompt_hash, launch_fingerprint, pid, pgid
                  FROM runs WHERE run_id = ?1",
                 params![run_id],
                 read_run,
             )
             .optional()?
             .ok_or_else(|| KruonError::NotFound(run_id.to_owned()))
+    }
+
+    pub fn list_runs(&self) -> KruonResult<Vec<RunSnapshot>> {
+        let connection = self.connection.lock().expect("event store mutex poisoned");
+        let mut statement = connection.prepare(
+            "SELECT run_id, adapter, workspace_root, working_directory, policy_id,
+                    status, terminal_state, created_at, updated_at, last_sequence,
+                    prompt_hash, launch_fingerprint, pid, pgid
+             FROM runs ORDER BY created_at DESC",
+        )?;
+        let rows = statement.query_map([], read_run)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn schema_versions(&self) -> KruonResult<Vec<i64>> {
+        let connection = self.connection.lock().expect("event store mutex poisoned");
+        let mut statement =
+            connection.prepare("SELECT version FROM schema_migrations ORDER BY version")?;
+        let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn active_run_count(&self) -> KruonResult<usize> {
+        let connection = self.connection.lock().expect("event store mutex poisoned");
+        let count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM runs WHERE terminal_state IS NULL",
+            [],
+            |row| row.get(0),
+        )?;
+        usize::try_from(count)
+            .map_err(|_| KruonError::Store("active run count exceeds platform size".into()))
     }
 
     pub fn list_events(
@@ -362,8 +413,9 @@ fn read_run(row: &Row<'_>) -> rusqlite::Result<RunSnapshot> {
             )
         })?,
         prompt_hash: row.get(10)?,
-        pid: row.get(11)?,
-        pgid: row.get(12)?,
+        launch_fingerprint: row.get(11)?,
+        pid: row.get(12)?,
+        pgid: row.get(13)?,
     })
 }
 
@@ -416,7 +468,13 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let store = Arc::new(EventStore::open_in_memory().unwrap());
         store
-            .create_run(run_id, &request(root.path()), root.path(), root.path())
+            .create_run(
+                run_id,
+                &request(root.path()),
+                root.path(),
+                root.path(),
+                "test-launch-fingerprint",
+            )
             .unwrap();
         (store, root)
     }
@@ -536,5 +594,115 @@ mod tests {
         let snapshot = store.get_run("hash").unwrap();
         assert_eq!(snapshot.prompt_hash.len(), 64);
         assert!(!snapshot.prompt_hash.contains("prompt"));
+    }
+
+    #[test]
+    fn legacy_schema_migrates_transactionally_without_losing_runs() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("legacy.sqlite3");
+        let connection = Connection::open(&database).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                );
+                INSERT INTO schema_migrations(version, applied_at) VALUES (1, 'legacy');
+                CREATE TABLE runs (
+                    run_id TEXT PRIMARY KEY,
+                    adapter TEXT NOT NULL,
+                    workspace_root TEXT NOT NULL,
+                    working_directory TEXT NOT NULL,
+                    policy_id TEXT,
+                    prompt_hash TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    terminal_state TEXT,
+                    last_sequence INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    pid INTEGER,
+                    pgid INTEGER
+                );
+                CREATE TABLE events (
+                    event_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    sequence INTEGER NOT NULL,
+                    schema_version INTEGER NOT NULL,
+                    event_type TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    terminal_state TEXT,
+                    envelope_json TEXT NOT NULL,
+                    UNIQUE(run_id, sequence)
+                );",
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO runs(
+                    run_id, adapter, workspace_root, working_directory, policy_id, prompt_hash,
+                    status, terminal_state, last_sequence, created_at, updated_at, pid, pgid
+                 ) VALUES (?1, ?2, ?3, ?3, NULL, ?4, ?5, NULL, 0, ?6, ?6, NULL, NULL)",
+                params![
+                    "legacy-run",
+                    encode(&AdapterKind::Codex).unwrap(),
+                    directory.path().to_string_lossy(),
+                    "legacy-prompt-hash",
+                    encode(&RunStatus::Pending).unwrap(),
+                    "2026-07-14T00:00:00Z",
+                ],
+            )
+            .unwrap();
+        drop(connection);
+
+        let store = EventStore::open(&database).unwrap();
+        let legacy = store.get_run("legacy-run").unwrap();
+        assert_eq!(legacy.launch_fingerprint, "");
+        let versions = {
+            let connection = store.connection.lock().unwrap();
+            let mut statement = connection
+                .prepare("SELECT version FROM schema_migrations ORDER BY version")
+                .unwrap();
+            statement
+                .query_map([], |row| row.get::<_, i64>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        assert_eq!(versions, vec![1, 2]);
+    }
+
+    #[test]
+    fn sqlite_full_rolls_back_event_and_run_projection_together() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("full.sqlite3");
+        let store = EventStore::open(&database).unwrap();
+        store
+            .create_run(
+                "disk-full",
+                &request(directory.path()),
+                directory.path(),
+                directory.path(),
+                "fault-injection",
+            )
+            .unwrap();
+        {
+            let connection = store.connection.lock().unwrap();
+            let page_count: i64 = connection
+                .pragma_query_value(None, "page_count", |row| row.get(0))
+                .unwrap();
+            connection
+                .pragma_update(None, "max_page_count", page_count)
+                .unwrap();
+        }
+
+        let mut oversized = event("disk-full", 1, 1);
+        oversized.payload = serde_json::json!({"blob": "x".repeat(8 * 1024 * 1024)});
+        assert!(matches!(
+            store.append_event(&oversized),
+            Err(KruonError::Store(_))
+        ));
+        assert_eq!(store.get_run("disk-full").unwrap().last_sequence, 0);
+        assert!(store.list_events("disk-full", 0).unwrap().is_empty());
     }
 }

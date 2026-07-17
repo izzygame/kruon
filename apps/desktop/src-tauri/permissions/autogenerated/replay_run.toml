@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-replay-run"
+description = "Enables the replay_run command without any pre-configured scope."
+commands.allow = ["replay_run"]
+
+[[permission]]
+identifier = "deny-replay-run"
+description = "Denies the replay_run command without any pre-configured scope."
+commands.deny = ["replay_run"]

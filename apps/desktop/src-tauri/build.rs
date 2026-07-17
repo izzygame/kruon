@@ -1,3 +1,37 @@
 fn main() {
-    tauri_build::build()
+    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
+        tauri_build::AppManifest::new().commands(&[
+            "cancel_run",
+            "get_run",
+            "list_events",
+            "replay_run",
+            "probe_connections",
+            "create_workspace",
+            "list_workspaces",
+            "trust_workspace",
+            "untrust_workspace",
+            "create_task",
+            "create_sample_task",
+            "list_tasks",
+            "enqueue_task_run",
+            "list_queue",
+            "list_runs",
+            "list_approvals",
+            "list_artifacts",
+            "collect_artifacts",
+            "record_completion_report",
+            "latest_task_reviews",
+            "list_run_audit",
+            "accept_task",
+            "return_task",
+            "restart_follow_up",
+            "get_recovery_advice",
+            "get_pause_capability",
+            "export_diagnostic_bundle",
+            "open_world_view",
+            "get_world_snapshot",
+            "focus_main_run",
+        ]),
+    ))
+    .expect("failed to build Tauri command manifest")
 }

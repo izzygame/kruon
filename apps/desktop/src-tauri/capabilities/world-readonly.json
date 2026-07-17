@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "world-readonly",
+  "description": "Unprivileged 3D projection window without process, filesystem, credential, or control permissions.",
+  "windows": ["world"],
+  "permissions": ["world-readonly-commands"]
+}

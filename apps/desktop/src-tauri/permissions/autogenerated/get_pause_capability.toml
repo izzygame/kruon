@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-pause-capability"
+description = "Enables the get_pause_capability command without any pre-configured scope."
+commands.allow = ["get_pause_capability"]
+
+[[permission]]
+identifier = "deny-get-pause-capability"
+description = "Denies the get_pause_capability command without any pre-configured scope."
+commands.deny = ["get_pause_capability"]

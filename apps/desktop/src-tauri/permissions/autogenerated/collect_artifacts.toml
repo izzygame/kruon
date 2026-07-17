@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-collect-artifacts"
+description = "Enables the collect_artifacts command without any pre-configured scope."
+commands.allow = ["collect_artifacts"]
+
+[[permission]]
+identifier = "deny-collect-artifacts"
+description = "Denies the collect_artifacts command without any pre-configured scope."
+commands.deny = ["collect_artifacts"]

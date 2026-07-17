@@ -7,10 +7,13 @@
     "build": "pnpm --filter @kruon/desktop build",
     "desktop:dev": "pnpm --filter @kruon/desktop tauri:dev",
     "desktop:build": "pnpm --filter @kruon/desktop tauri:build",
+    "desktop:bundle:macos": "pnpm --filter @kruon/desktop tauri:bundle:macos",
     "typecheck": "pnpm --filter @kruon/desktop typecheck",
     "test": "pnpm --filter @kruon/desktop test",
     "lint": "pnpm --filter @kruon/desktop lint",
-    "check-env": "node scripts/check-dev-env.mjs"
+    "check-env": "node scripts/check-dev-env.mjs",
+    "release:check": "node scripts/check-macos-alpha-release.mjs",
+    "security:check": "node scripts/check-alpha-security.mjs"
   },
   "engines": {
     "node": ">=20.0.0",

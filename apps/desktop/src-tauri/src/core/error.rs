@@ -14,6 +14,8 @@ pub enum KruonError {
     Process(String),
     #[error("adapter error: {0}")]
     Adapter(String),
+    #[error("adapter compatibility error: {0}")]
+    Compatibility(String),
     #[error("run not found: {0}")]
     NotFound(String),
     #[error("event conflict: {0}")]

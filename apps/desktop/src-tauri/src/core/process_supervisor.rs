@@ -1,6 +1,5 @@
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::process::CommandExt;
+use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,6 +11,10 @@ use serde::{Deserialize, Serialize};
 use super::adapter_host::LaunchPlan;
 use super::domain::{RunStatus, TerminalState};
 use super::error::{KruonError, KruonResult};
+
+pub const MAX_CAPTURED_LINE_BYTES: usize = 256 * 1024;
+pub const MAX_CAPTURED_STREAM_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_CAPTURED_STREAM_LINES: usize = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProcessHandle {
@@ -29,6 +32,18 @@ pub struct ProcessOutcome {
     pub reason: String,
     pub stdout_lines: Vec<String>,
     pub stderr_lines: Vec<String>,
+    pub stdout_truncated: bool,
+    pub stderr_truncated: bool,
+    pub stdout_lossy_lines: usize,
+    pub stderr_lossy_lines: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CapturedStream {
+    lines: Vec<String>,
+    captured_bytes: usize,
+    truncated: bool,
+    lossy_lines: usize,
 }
 
 struct ManagedProcess {
@@ -37,8 +52,8 @@ struct ManagedProcess {
     child: Mutex<Child>,
     cancel_requested: AtomicBool,
     outcome: Mutex<Option<ProcessOutcome>>,
-    stdout_lines: Arc<Mutex<Vec<String>>>,
-    stderr_lines: Arc<Mutex<Vec<String>>>,
+    stdout: Arc<Mutex<CapturedStream>>,
+    stderr: Arc<Mutex<CapturedStream>>,
     readers: Mutex<Vec<JoinHandle<()>>>,
 }
 
@@ -83,8 +98,12 @@ impl ProcessSupervisor {
             .envs(plan.env.iter().map(|(key, value)| (key, value)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .process_group(0);
+            .stderr(Stdio::piped());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
         let mut child = command.spawn().map_err(|error| {
             KruonError::Process(format!("failed to spawn {}: {error}", plan.program))
         })?;
@@ -94,14 +113,14 @@ impl ProcessSupervisor {
 
         let stdin = child.stdin.take();
 
-        let stdout_lines = Arc::new(Mutex::new(Vec::new()));
-        let stderr_lines = Arc::new(Mutex::new(Vec::new()));
+        let stdout = Arc::new(Mutex::new(CapturedStream::default()));
+        let stderr = Arc::new(Mutex::new(CapturedStream::default()));
         let mut readers = Vec::new();
-        if let Some(stdout) = child.stdout.take() {
-            readers.push(drain_lines(stdout, Arc::clone(&stdout_lines)));
+        if let Some(reader) = child.stdout.take() {
+            readers.push(drain_output(reader, Arc::clone(&stdout)));
         }
-        if let Some(stderr) = child.stderr.take() {
-            readers.push(drain_lines(stderr, Arc::clone(&stderr_lines)));
+        if let Some(reader) = child.stderr.take() {
+            readers.push(drain_output(reader, Arc::clone(&stderr)));
         }
 
         let managed = Arc::new(ManagedProcess {
@@ -110,8 +129,8 @@ impl ProcessSupervisor {
             child: Mutex::new(child),
             cancel_requested: AtomicBool::new(false),
             outcome: Mutex::new(None),
-            stdout_lines,
-            stderr_lines,
+            stdout,
+            stderr,
             readers: Mutex::new(readers),
         });
         self.processes
@@ -175,25 +194,25 @@ impl ProcessSupervisor {
         }
         managed.cancel_requested.store(true, Ordering::SeqCst);
 
-        let term_result = signal_owned_group(&managed, libc::SIGTERM);
+        let term_result = terminate_owned_group(&managed, false);
         if let Err(error) = term_result {
             return Ok(finalize_uncertain(
                 &managed,
                 false,
                 true,
-                format!("{reason}: SIGTERM failed: {error}"),
+                format!("{reason}: graceful termination failed: {error}"),
             ));
         }
         if wait_for_exit(&managed, self.term_grace)? {
             return Ok(finalize_cancelled(&managed, false, reason));
         }
 
-        if let Err(error) = signal_owned_group(&managed, libc::SIGKILL) {
+        if let Err(error) = terminate_owned_group(&managed, true) {
             return Ok(finalize_uncertain(
                 &managed,
                 true,
                 true,
-                format!("{reason}: SIGKILL failed: {error}"),
+                format!("{reason}: forced termination failed: {error}"),
             ));
         }
         let exited = wait_for_exit(&managed, self.kill_grace)?;
@@ -234,15 +253,65 @@ impl ProcessSupervisor {
     }
 }
 
-fn drain_lines<R: std::io::Read + Send + 'static>(
+fn drain_output<R: Read + Send + 'static>(
     reader: R,
-    target: Arc<Mutex<Vec<String>>>,
+    target: Arc<Mutex<CapturedStream>>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        for line in BufReader::new(reader).lines().map_while(Result::ok) {
-            target.lock().expect("output mutex poisoned").push(line);
+        let mut reader = reader;
+        let mut chunk = [0_u8; 8 * 1024];
+        let mut line = Vec::with_capacity(8 * 1024);
+        let mut line_truncated = false;
+        loop {
+            let count = match reader.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(count) => count,
+                Err(_) => {
+                    target.lock().expect("output mutex poisoned").truncated = true;
+                    return;
+                }
+            };
+            for byte in &chunk[..count] {
+                if *byte == b'\n' {
+                    capture_line(&target, &mut line, line_truncated);
+                    line_truncated = false;
+                } else if line.len() < MAX_CAPTURED_LINE_BYTES {
+                    line.push(*byte);
+                } else {
+                    line_truncated = true;
+                }
+            }
+        }
+        if !line.is_empty() || line_truncated {
+            capture_line(&target, &mut line, line_truncated);
         }
     })
+}
+
+fn capture_line(target: &Arc<Mutex<CapturedStream>>, line: &mut Vec<u8>, line_truncated: bool) {
+    if line.last() == Some(&b'\r') {
+        line.pop();
+    }
+    let mut capture = target.lock().expect("output mutex poisoned");
+    if capture.lines.len() >= MAX_CAPTURED_STREAM_LINES
+        || capture.captured_bytes >= MAX_CAPTURED_STREAM_BYTES
+    {
+        capture.truncated = true;
+        line.clear();
+        return;
+    }
+    let remaining = MAX_CAPTURED_STREAM_BYTES - capture.captured_bytes;
+    let captured_length = line.len().min(remaining);
+    let captured = &line[..captured_length];
+    if std::str::from_utf8(captured).is_err() {
+        capture.lossy_lines += 1;
+    }
+    capture
+        .lines
+        .push(String::from_utf8_lossy(captured).into_owned());
+    capture.captured_bytes += captured_length;
+    capture.truncated |= line_truncated || captured_length < line.len();
+    line.clear();
 }
 
 fn wait_for_exit(managed: &ManagedProcess, duration: Duration) -> KruonResult<bool> {
@@ -264,13 +333,15 @@ fn wait_for_exit(managed: &ManagedProcess, duration: Duration) -> KruonResult<bo
     }
 }
 
-fn signal_owned_group(managed: &ManagedProcess, signal: i32) -> KruonResult<()> {
+#[cfg(unix)]
+fn terminate_owned_group(managed: &ManagedProcess, force: bool) -> KruonResult<()> {
     if managed.pgid <= 1 || managed.pgid != managed.pid as i32 {
         return Err(KruonError::Process(format!(
             "refusing to signal unowned process group {} for PID {}",
             managed.pgid, managed.pid
         )));
     }
+    let signal = if force { libc::SIGKILL } else { libc::SIGTERM };
     let result = unsafe { libc::kill(-managed.pgid, signal) };
     if result == 0 {
         return Ok(());
@@ -282,6 +353,31 @@ fn signal_owned_group(managed: &ManagedProcess, signal: i32) -> KruonResult<()> 
     Err(error.into())
 }
 
+#[cfg(windows)]
+fn terminate_owned_group(managed: &ManagedProcess, force: bool) -> KruonResult<()> {
+    let mut command = Command::new("taskkill");
+    command.arg("/PID").arg(managed.pid.to_string()).arg("/T");
+    if force {
+        command.arg("/F");
+    }
+    let status = command.status()?;
+    if status.success()
+        || managed
+            .child
+            .lock()
+            .expect("child mutex poisoned")
+            .try_wait()?
+            .is_some()
+    {
+        return Ok(());
+    }
+    Err(KruonError::Process(format!(
+        "taskkill did not terminate process tree for PID {}",
+        managed.pid
+    )))
+}
+
+#[cfg(unix)]
 fn group_exists(pgid: i32) -> KruonResult<bool> {
     if pgid <= 1 {
         return Err(KruonError::Process(format!("invalid process group {pgid}")));
@@ -296,6 +392,14 @@ fn group_exists(pgid: i32) -> KruonResult<bool> {
         Some(libc::EPERM) => Ok(true),
         _ => Err(error.into()),
     }
+}
+
+#[cfg(windows)]
+fn group_exists(_pgid: i32) -> KruonResult<bool> {
+    // `taskkill /T` is the Windows process-tree primitive used above. Windows
+    // does not expose POSIX process groups, so only report a residual when the
+    // owned root process is still alive; otherwise the tree kill was accepted.
+    Ok(false)
 }
 
 fn finalize_natural(managed: &ManagedProcess, exit_code: Option<i32>) -> ProcessOutcome {
@@ -325,6 +429,10 @@ fn finalize_natural(managed: &ManagedProcess, exit_code: Option<i32>) -> Process
             reason,
             stdout_lines: Vec::new(),
             stderr_lines: Vec::new(),
+            stdout_truncated: false,
+            stderr_truncated: false,
+            stdout_lossy_lines: 0,
+            stderr_lossy_lines: 0,
         },
     )
 }
@@ -349,6 +457,10 @@ fn finalize_cancelled(managed: &ManagedProcess, forced: bool, reason: &str) -> P
             reason: reason.to_owned(),
             stdout_lines: Vec::new(),
             stderr_lines: Vec::new(),
+            stdout_truncated: false,
+            stderr_truncated: false,
+            stdout_lossy_lines: 0,
+            stderr_lossy_lines: 0,
         },
     )
 }
@@ -370,6 +482,10 @@ fn finalize_uncertain(
             reason,
             stdout_lines: Vec::new(),
             stderr_lines: Vec::new(),
+            stdout_truncated: false,
+            stderr_truncated: false,
+            stdout_lossy_lines: 0,
+            stderr_lossy_lines: 0,
         },
     )
 }
@@ -382,16 +498,7 @@ fn finalize_without_join(
     if let Some(existing) = outcome.clone() {
         return existing;
     }
-    candidate.stdout_lines = managed
-        .stdout_lines
-        .lock()
-        .expect("stdout mutex poisoned")
-        .clone();
-    candidate.stderr_lines = managed
-        .stderr_lines
-        .lock()
-        .expect("stderr mutex poisoned")
-        .clone();
+    apply_captured_output(managed, &mut candidate);
     *outcome = Some(candidate.clone());
     candidate
 }
@@ -409,21 +516,140 @@ fn finalize(managed: &ManagedProcess, mut candidate: ProcessOutcome) -> ProcessO
     {
         let _ = reader.join();
     }
-    candidate.stdout_lines = managed
-        .stdout_lines
-        .lock()
-        .expect("stdout mutex poisoned")
-        .clone();
-    candidate.stderr_lines = managed
-        .stderr_lines
-        .lock()
-        .expect("stderr mutex poisoned")
-        .clone();
+    apply_captured_output(managed, &mut candidate);
     *outcome = Some(candidate.clone());
     candidate
 }
 
+fn apply_captured_output(managed: &ManagedProcess, candidate: &mut ProcessOutcome) {
+    let stdout = managed
+        .stdout
+        .lock()
+        .expect("stdout mutex poisoned")
+        .clone();
+    let stderr = managed
+        .stderr
+        .lock()
+        .expect("stderr mutex poisoned")
+        .clone();
+    candidate.stdout_lines = stdout.lines;
+    candidate.stderr_lines = stderr.lines;
+    candidate.stdout_truncated = stdout.truncated;
+    candidate.stderr_truncated = stderr.truncated;
+    candidate.stdout_lossy_lines = stdout.lossy_lines;
+    candidate.stderr_lossy_lines = stderr.lossy_lines;
+}
+
 #[cfg(test)]
+mod capture_tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    fn capture(bytes: Vec<u8>) -> CapturedStream {
+        let target = Arc::new(Mutex::new(CapturedStream::default()));
+        drain_output(Cursor::new(bytes), Arc::clone(&target))
+            .join()
+            .unwrap();
+        let result = target.lock().unwrap().clone();
+        result
+    }
+
+    #[test]
+    fn invalid_utf8_is_lossy_and_does_not_drop_following_events() {
+        let result = capture(
+            b"{\"type\":\"thread.started\"}\n\xff\xfe\n{\"type\":\"turn.completed\"}\n".to_vec(),
+        );
+        assert_eq!(result.lines.len(), 3);
+        assert_eq!(result.lossy_lines, 1);
+        assert!(result.lines[1].contains('\u{fffd}'));
+        assert!(result.lines[2].contains("turn.completed"));
+    }
+
+    #[test]
+    fn oversized_lines_and_line_counts_are_bounded_but_fully_drained() {
+        let mut long = vec![b'a'; MAX_CAPTURED_LINE_BYTES + 4_096];
+        long.extend_from_slice(b"\ntail\n");
+        let result = capture(long);
+        assert_eq!(result.lines[0].len(), MAX_CAPTURED_LINE_BYTES);
+        assert_eq!(result.lines[1], "tail");
+        assert!(result.truncated);
+
+        let many = "x\n".repeat(MAX_CAPTURED_STREAM_LINES + 1).into_bytes();
+        let many_result = capture(many);
+        assert_eq!(many_result.lines.len(), MAX_CAPTURED_STREAM_LINES);
+        assert!(many_result.truncated);
+    }
+
+    #[test]
+    fn total_stream_bytes_are_bounded_independently_of_line_count() {
+        let line = vec![b'b'; 1024];
+        let mut bytes = Vec::with_capacity(MAX_CAPTURED_STREAM_BYTES + 8 * 1024);
+        for _ in 0..=(MAX_CAPTURED_STREAM_BYTES / line.len()) {
+            bytes.extend_from_slice(&line);
+            bytes.push(b'\n');
+        }
+        let result = capture(bytes);
+        assert_eq!(result.captured_bytes, MAX_CAPTURED_STREAM_BYTES);
+        assert!(result.lines.len() < MAX_CAPTURED_STREAM_LINES);
+        assert!(result.truncated);
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+    use crate::core::domain::AdapterKind;
+
+    fn cmd_plan(script: &str) -> LaunchPlan {
+        let program = std::env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".into());
+        let mut env = Vec::new();
+        for key in ["SystemRoot", "PATH"] {
+            if let Ok(value) = std::env::var(key) {
+                env.push((key.to_owned(), value));
+            }
+        }
+        LaunchPlan {
+            adapter: AdapterKind::Codex,
+            program,
+            args: vec!["/D".into(), "/S".into(), "/C".into(), script.into()],
+            cwd: std::env::temp_dir(),
+            prompt_stdin: String::new(),
+            env,
+        }
+    }
+
+    #[test]
+    fn windows_nonzero_exit_is_failed_and_preserves_output() {
+        let supervisor = ProcessSupervisor::new(Duration::from_millis(100), Duration::from_secs(1));
+        supervisor
+            .spawn("windows-crash", cmd_plan("echo crash-fixture & exit /b 7"))
+            .unwrap();
+        let outcome = supervisor
+            .wait("windows-crash", Duration::from_secs(2))
+            .unwrap();
+        assert_eq!(outcome.status, RunStatus::Failed);
+        assert_eq!(outcome.terminal_state, TerminalState::Failed);
+        assert_eq!(outcome.exit_code, Some(7));
+        assert_eq!(outcome.stdout_lines, vec!["crash-fixture "]);
+    }
+
+    #[test]
+    fn windows_timeout_never_becomes_completed() {
+        let supervisor = ProcessSupervisor::new(Duration::from_millis(100), Duration::from_secs(1));
+        supervisor
+            .spawn("windows-timeout", cmd_plan("ping 127.0.0.1 -n 6 >nul"))
+            .unwrap();
+        let outcome = supervisor
+            .wait("windows-timeout", Duration::from_millis(100))
+            .unwrap();
+        assert_ne!(outcome.status, RunStatus::Completed);
+        assert_ne!(outcome.terminal_state, TerminalState::Completed);
+        assert!(outcome.reason.contains("timeout"));
+    }
+}
+
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::core::domain::AdapterKind;

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-untrust-workspace"
+description = "Enables the untrust_workspace command without any pre-configured scope."
+commands.allow = ["untrust_workspace"]
+
+[[permission]]
+identifier = "deny-untrust-workspace"
+description = "Denies the untrust_workspace command without any pre-configured scope."
+commands.deny = ["untrust_workspace"]

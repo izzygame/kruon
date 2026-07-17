@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-record-completion-report"
+description = "Enables the record_completion_report command without any pre-configured scope."
+commands.allow = ["record_completion_report"]
+
+[[permission]]
+identifier = "deny-record-completion-report"
+description = "Denies the record_completion_report command without any pre-configured scope."
+commands.deny = ["record_completion_report"]

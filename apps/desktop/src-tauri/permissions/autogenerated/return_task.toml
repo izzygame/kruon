@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-return-task"
+description = "Enables the return_task command without any pre-configured scope."
+commands.allow = ["return_task"]
+
+[[permission]]
+identifier = "deny-return-task"
+description = "Denies the return_task command without any pre-configured scope."
+commands.deny = ["return_task"]

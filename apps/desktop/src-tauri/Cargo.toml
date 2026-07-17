@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "kruon desktop shell"
 authors = ["kruon"]
 edition = "2021"
+default-run = "kruon-desktop"
 
 [lib]
 name = "kruon_desktop_lib"

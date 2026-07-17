@@ -10,14 +10,18 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build --no-bundle",
+    "tauri:bundle:macos": "tauri build --target aarch64-apple-darwin --bundles app,dmg",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@react-three/fiber": "9.6.1",
+    "@tauri-apps/api": "^2.11.1",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "three": "0.185.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
@@ -25,6 +29,7 @@
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
+    "@types/three": "^0.185.1",
     "@vitejs/plugin-react": "^4.4.1",
     "jsdom": "^26.1.0",
     "typescript": "~5.8.3",

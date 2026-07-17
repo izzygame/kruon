@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-recovery-advice"
+description = "Enables the get_recovery_advice command without any pre-configured scope."
+commands.allow = ["get_recovery_advice"]
+
+[[permission]]
+identifier = "deny-get-recovery-advice"
+description = "Denies the get_recovery_advice command without any pre-configured scope."
+commands.deny = ["get_recovery_advice"]

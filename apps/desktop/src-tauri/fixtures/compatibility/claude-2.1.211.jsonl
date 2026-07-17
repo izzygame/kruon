@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"fixture-session"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"fixture"}]},"oauth_token":"fixture-secret"}
+{"type":"result","subtype":"success","is_error":false}

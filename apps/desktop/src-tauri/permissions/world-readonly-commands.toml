@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "world-readonly-commands"
+description = "Allows the world window to read the redacted projection and focus an existing run only."
+commands.allow = ["get_world_snapshot", "focus_main_run"]

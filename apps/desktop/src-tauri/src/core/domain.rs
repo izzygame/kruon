@@ -138,6 +138,7 @@ pub struct RunSnapshot {
     pub updated_at: String,
     pub last_sequence: u64,
     pub prompt_hash: String,
+    pub launch_fingerprint: String,
     pub pid: Option<u32>,
     pub pgid: Option<i32>,
 }

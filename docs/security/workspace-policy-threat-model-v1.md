@@ -7,6 +7,8 @@
 > **日期**: 2026-07-14  
 > **作者**: S1-06 安全审查支线
 
+> **M4 增量（2026-07-17）**：本文详细条目保留 W1/spike 时点证据。当前产品实现已加入可信 Workspace 持久化及撤销、Run 启动前二次校验、Artifact/完成报告范围验证、固定只读适配器、`env_clear`、有界输出、元数据诊断白名单、SQLite `NOFOLLOW` 与 Unix `0700/0600`。网络出口、OS 级文件沙箱、运行期 TOCTOU、进程组逃逸和 CLI 二进制来源证明仍开放；精确版本矩阵只证明兼容性，不证明可执行文件完整性。M4 当前风险登记和外部复现入口见 [M4 external security review packet](M4-external-security-review-packet-2026-07-17.md)。
+
 ---
 
 ## 目录
@@ -467,22 +469,22 @@
 **预防**:
 - `verified` — `event_parser.py:redact()` 在事件解析时脱敏
 - `verified` — `probe.py` 对所有捕获输出调用 `redact()`
-- `inferred` — 诊断包生成时应进行二次脱敏扫描
-- `unverified` — 路径脱敏（将 `/Users/izzy` 替换为 `$HOME`）尚未实现
-- `unverified` — prompt 内容脱敏策略尚未定义
+- `verified` — `diagnostics.rs` 从元数据白名单重新构造诊断包，不复制 prompt、项目身份、路径、事件正文或原始日志
+- `verified` — 诊断包只接受严格归一化版本字符串和固定枚举/数值/布尔字段，最多包含最近 50 个匿名 Run 摘要
 
 **检测**:
-- `inferred` — 诊断包生成前的脱敏验证扫描
-- `unverified` — 可检测未脱敏的路径模式
+- `verified` — 写文件前递归检查禁止字段名与常见 secret 形态
+- `verified` — Windows 驱动器/UNC 与 macOS/Linux 绝对路径触发拒绝，而不是替换后继续导出
 
 **恢复**:
 - 诊断包生成后不可撤销——需在生成前确保脱敏完整
 
 **测试证据**:
 - `verified` — `test_event_parser.py` 中的 secret redaction 测试
-- `unverified` — 需要诊断包脱敏的端到端测试
+- `verified` — 敏感源 fixture 证明 token、prompt、项目名、完整路径、原始日志、ID 与哈希均不进入包
+- `verified` — 二次扫描拒绝字段/secret/跨平台路径；原子导出测试证明失败不留最终文件或临时文件
 
-**剩余风险**: 中。secret 脱敏已实现，但路径脱敏和 prompt 脱敏是 `unverified`。M4 (DEV-403) 计划实现完整诊断包脱敏。
+**剩余风险**: 低至中。自定义 secret 形态无法靠模式穷举；主控制是类型化元数据白名单，二次扫描仅作为纵深防御。未来若加入日志、附件、崩溃转储或自动上传，必须重新开启 T-12 评审。
 
 **责任模块**: Diagnostic Service (脱敏) → Event Parser (基础脱敏)
 
