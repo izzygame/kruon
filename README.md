@@ -113,6 +113,11 @@ kruon/
   contract for Tauri capabilities, CSP, read-only adapters, environment and
   storage. Independent review is still open; unrestricted CLI network egress,
   OS-level sandboxing and executable provenance remain explicit high risks.
+- M4 DEV-407 repository tooling adds an on-device aggregate readiness view and
+  a bounded JSON export that requires fresh consent every time. It contains no
+  participant/install identifier, workspace or task text, file locations,
+  prompts, logs/events, or automatic upload. The 20–50 person cohort, support
+  evidence, and Go/Pivot/No-Go decision remain external and open.
 - Native icon files are technical placeholders pending approved brand export.
 - Actual 3–5 person user interviews depend on product-side recruitment and consent.
 
@@ -125,7 +130,8 @@ See [W1 acceptance](docs/verification/W1-acceptance-report-2026-07-14.md),
 [M4 diagnostic verification](docs/verification/M4-diagnostic-export-2026-07-17.md),
 [M4 macOS release preflight](docs/verification/M4-macos-alpha-release-preflight-2026-07-17.md),
 [M4 onboarding verification](docs/verification/M4-onboarding-recovery-2026-07-17.md),
-[M4 security preflight](docs/verification/M4-security-preflight-2026-07-17.md), and
+[M4 security preflight](docs/verification/M4-security-preflight-2026-07-17.md),
+[M4 consented metrics verification](docs/verification/M4-alpha-metrics-2026-07-18.md), and
 [security review](docs/security/w1-runtime-security-review-2026-07-14.md).
 
 ## Verification

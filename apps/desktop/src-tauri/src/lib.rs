@@ -11,7 +11,7 @@ use core::runtime::{
     return_task, trust_workspace, untrust_workspace,
 };
 use core::RuntimeCore;
-use core::{DiagnosticExportRecord, DiagnosticLocation};
+use core::{AlphaMetricsExportRecord, DiagnosticExportRecord, DiagnosticLocation};
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 
@@ -98,6 +98,40 @@ fn export_diagnostic_bundle(
         })
 }
 
+#[tauri::command]
+fn export_alpha_metrics(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<RuntimeCore>>,
+    consented: bool,
+) -> Result<AlphaMetricsExportRecord, String> {
+    if !consented {
+        return Err(
+            "consent_required: explicit consent is required for each Alpha metrics export"
+                .to_owned(),
+        );
+    }
+    let (directory, saved_in) = match app.path().download_dir() {
+        Ok(directory) => (directory, DiagnosticLocation::Downloads),
+        Err(_) => {
+            let directory = app
+                .path()
+                .app_data_dir()
+                .map_err(|_| {
+                    "alpha_metrics_export_failed: no safe local export directory is available"
+                        .to_owned()
+                })?
+                .join("alpha-metrics");
+            (directory, DiagnosticLocation::AppData)
+        }
+    };
+    state
+        .export_alpha_metrics(&directory, saved_in, probe_connections(), consented)
+        .map_err(|_| {
+            "alpha_metrics_export_failed: the aggregate local metrics file could not be written"
+                .to_owned()
+        })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let runtime = RuntimeCore::open(core::release::default_database_path())
@@ -132,6 +166,7 @@ pub fn run() {
             get_recovery_advice,
             get_pause_capability,
             export_diagnostic_bundle,
+            export_alpha_metrics,
             open_world_view,
             get_world_snapshot,
             focus_main_run

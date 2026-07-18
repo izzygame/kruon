@@ -1,14 +1,15 @@
 # M4 external security review packet
 
 - Prepared: 2026-07-17
+- Updated: 2026-07-18 for the DEV-407 local aggregate export surface
 - Scope: DEV-406 independent review handoff
-- Internal decision: ADR-013
+- Internal decisions: ADR-013 and ADR-014
 - External status: **not yet reviewed**
 - Review target: **must be filled with a frozen commit/tag before handoff; the current development worktree is not a review identifier**
 
 ## Reviewer objective
 
-Determine whether the invite-only, read-only Alpha can safely launch the frozen Codex and Claude Code adapters without violating Kruon's stated workspace, credential, event-integrity, diagnostic, capability, cancellation, and local-data boundaries. Report critical/high findings with a reproducible proof and identify assumptions that are not enforceable by the current architecture.
+Determine whether the invite-only, read-only Alpha can safely launch the frozen Codex and Claude Code adapters without violating Kruon's stated workspace, credential, event-integrity, diagnostic, consented-metrics, capability, cancellation, and local-data boundaries. Report critical/high findings with a reproducible proof and identify assumptions that are not enforceable by the current architecture.
 
 This packet does not ask the reviewer to certify network or OS isolation that the product does not implement.
 
@@ -17,7 +18,7 @@ This packet does not ask the reviewer to certify network or OS isolation that th
 1. Tauri main control window versus the projection-only world window.
 2. Rust runtime versus the untrusted third-party CLI process and its structured output.
 3. Explicitly trusted canonical workspace versus the rest of the filesystem.
-4. Local SQLite/event/audit/diagnostic data versus other local users and exported support files.
+4. Local SQLite/event/audit data versus other local users and manually exported diagnostic/Alpha-metrics files.
 5. Bundled application, resolved per-user CLI shim/binary, Node runtime, and upstream authentication state.
 6. Manual macOS signing/notarization workflow and retained application data across upgrade/uninstall.
 
@@ -28,6 +29,7 @@ This packet does not ask the reviewer to certify network or OS isolation that th
 - inject commands through task text, adapter JSON, malformed/oversized/invalid UTF-8 output, executable path, environment, or Tauri IPC;
 - obtain a process, filesystem, credential, diagnostic-export, cancel, approval, or enqueue capability from the world window;
 - leak secrets, prompts, project identity, absolute paths, raw logs, auth status output, or environment values into SQLite/UI/diagnostic files;
+- bypass per-export metrics consent, persist consent, add a stable identifier, or leak identities, task/workspace text, file locations, event payloads, or process output into the aggregate Alpha file;
 - race cancel/wait/finalize/restart/review paths into a false `completed`, duplicate terminal, stale approval, or auto-accepted state;
 - substitute or cross-user read the SQLite/WAL/SHM files; attempt a newer-schema downgrade or partial migration;
 - use unrestricted CLI network access or process-group escape to exceed the product's honest security claims;
@@ -46,6 +48,7 @@ This packet does not ask the reviewer to certify network or OS isolation that th
 | Bounded output and malformed input handling | `process_supervisor.rs`, `adapter_host.rs` |
 | No-follow/private local store and fail-closed schema | `database.rs`, `release.rs` |
 | Recursive secret redaction and metadata-only diagnostics | `adapter_host.rs`, `diagnostics.rs` |
+| Per-export consent and aggregate-only Alpha metrics | `alpha_metrics.rs`, `runtime.rs`, main capability/UI, ADR-014 |
 | World capability isolation and CSP | `capabilities/`, `permissions/`, `tauri.conf.json` |
 | Human-only acceptance | `m2.rs`, main UI, M2 verification |
 | Signed/notarized package contract | ADR-011, release workflow and preflight script |
@@ -85,6 +88,7 @@ The reviewer should additionally run a pinned RustSec audit, macOS static/dynami
 | M4-S07 | High | Mitigated, residual open | Recursive redaction and diagnostic allowlists are tested, but unknown secret formats remain possible. Fuzz structured events and output encodings. |
 | M4-S08 | Medium | Partial | Official npm production audit reported no known advisories on 2026-07-17. Pinned RustSec and transitive license/supply-chain checks remain required. |
 | M4-S09 | High | External gate | Real Developer ID signing, notarization, Gatekeeper/stapling, clean upgrade/uninstall, and updater key custody remain DEV-404 gates. |
+| M4-S10 | Medium | Mitigated, residual open | The Alpha file has no embedded participant/install identifier and requires fresh consent, but an exact export timestamp plus manually shared device-level aggregates can still be contextually re-identified by the coordinator. Review copy, destination handling, and the separately controlled research ledger. |
 
 ## Requested deliverables
 

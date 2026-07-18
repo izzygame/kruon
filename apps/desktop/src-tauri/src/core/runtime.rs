@@ -7,6 +7,10 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use super::adapter_host::AdapterHost;
+use super::alpha_metrics::{
+    export_alpha_metrics as write_alpha_metrics, AlphaMetricsExportRecord,
+    AlphaMetricsSourceSnapshot, ONBOARDING_SAMPLE_TASK_CONTEXT, ONBOARDING_SAMPLE_TASK_TITLE,
+};
 use super::diagnostics::{
     export_diagnostic_bundle, DiagnosticExportRecord, DiagnosticLocation, DiagnosticRunSource,
     DiagnosticSourceSnapshot, MAX_DIAGNOSTIC_RUNS,
@@ -29,10 +33,6 @@ use super::m2::{
 use super::m3::{project_world_station, WorldSnapshot};
 use super::path_policy::PathPolicy;
 use super::process_supervisor::{ProcessOutcome, ProcessSupervisor};
-
-const ONBOARDING_SAMPLE_TASK_TITLE: &str = "Inspect this workspace";
-const ONBOARDING_SAMPLE_TASK_CONTEXT: &str =
-    "Kruon Alpha onboarding sample. This task is read-only and must not modify files.";
 
 pub struct RuntimeCore {
     store: Arc<EventStore>,
@@ -239,6 +239,28 @@ impl RuntimeCore {
                 total_runs,
                 database_schema_versions: self.store.schema_versions()?,
             },
+        )
+    }
+
+    pub fn export_alpha_metrics(
+        &self,
+        directory: &Path,
+        saved_in: DiagnosticLocation,
+        connections: Vec<AdapterConnection>,
+        consented: bool,
+    ) -> KruonResult<AlphaMetricsExportRecord> {
+        write_alpha_metrics(
+            directory,
+            saved_in,
+            AlphaMetricsSourceSnapshot {
+                connections,
+                workspaces: self.list_workspaces()?,
+                tasks: self.list_tasks()?,
+                queue: self.list_queue()?,
+                runs: self.list_runs()?,
+                reviews: self.latest_task_reviews()?,
+            },
+            consented,
         )
     }
 

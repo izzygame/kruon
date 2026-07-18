@@ -28,6 +28,7 @@ fn main() {
             "get_recovery_advice",
             "get_pause_capability",
             "export_diagnostic_bundle",
+            "export_alpha_metrics",
             "open_world_view",
             "get_world_snapshot",
             "focus_main_run",

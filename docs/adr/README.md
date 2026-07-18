@@ -15,5 +15,6 @@
 | [ADR-011](ADR-011-macos-alpha-packaging-and-data-lifecycle.md) | macOS Alpha 打包、签名公证门与本地数据生命周期 | 已采纳（外部门开放） |
 | [ADR-012](ADR-012-derived-onboarding-and-recovery-guidance.md) | 派生式首次连接进度、幂等只读示例与错误码恢复引导 | 已采纳 |
 | [ADR-013](ADR-013-alpha-security-preflight-and-external-review-gate.md) | Alpha 安全预审、本地存储加固与独立评审门 | 已采纳（外部评审开放） |
+| [ADR-014](ADR-014-consented-local-alpha-metrics.md) | 每次明确同意的本地聚合 Alpha 指标与外部证据门 | 已采纳（外部证据开放） |
 
 这些决策覆盖 W1-M4 当前技术闭环。每项都列出当前未解决的边界；“已采纳”不等于对应风险已经被操作系统级沙箱完全消除。

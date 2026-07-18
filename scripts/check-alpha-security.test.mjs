@@ -38,3 +38,10 @@ test("unsafe WebView script, writable adapter, or followable database fails clos
   assert.ok(errors.some((error) => error.includes("adapter contract drifted")));
   assert.ok(errors.some((error) => error.includes("symbolic-link database")));
 });
+
+test("removing the consented metrics export from the main capability fails closed", () => {
+  const inputs = loadSecurityInputs();
+  inputs.mainPermission = inputs.mainPermission.replace('  "export_alpha_metrics",\n', "");
+  const errors = validateSecurityConfiguration(inputs);
+  assert.ok(errors.some((error) => error.includes("export_alpha_metrics")));
+});

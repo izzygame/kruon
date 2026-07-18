@@ -47,7 +47,7 @@ export function validateSecurityConfiguration(inputs) {
   if (JSON.stringify([...worldCommands].sort()) !== JSON.stringify(["focus_main_run", "get_world_snapshot"])) {
     errors.push("world window command allowlist must stay projection-only");
   }
-  for (const command of ["enqueue_task_run", "untrust_workspace", "export_diagnostic_bundle"]) {
+  for (const command of ["enqueue_task_run", "untrust_workspace", "export_diagnostic_bundle", "export_alpha_metrics"]) {
     if (!mainCommands.includes(command)) {
       errors.push(`main control capability is missing security-critical command ${command}`);
     }

@@ -159,6 +159,16 @@ function createClient({
           includedRuns: runs.length,
           totalRuns: runs.length,
         };
+      case "export_alpha_metrics":
+        return {
+          fileName: "kruon-alpha-metrics-20260718T010203Z-a1b2c3d4.json",
+          savedIn: "downloads",
+          byteCount: 1024,
+          sha256: "abcdef0123456789",
+          generatedAt: "2026-07-18T01:02:03Z",
+          taskCount: tasks.length,
+          runCount: runs.length,
+        };
       case "trust_workspace":
         return { ...workspace, trusted: true };
       case "untrust_workspace":
@@ -187,7 +197,7 @@ describe("App", () => {
     const { client } = createClient({ connections: notFoundConnections });
     render(<App client={client} />);
 
-    expect(await screen.findByText("Codex")).toBeDefined();
+    expect((await screen.findAllByText("Codex")).length).toBeGreaterThan(0);
     expect(screen.getByText("Claude Code")).toBeDefined();
     expect(screen.getAllByText("sandbox_policy_only")).toHaveLength(2);
     expect(screen.getByText(/unverified per-action approval is not exposed/i)).toBeDefined();
@@ -264,6 +274,18 @@ describe("App", () => {
         request: { taskId: "sample-task-1", adapter: "codex", timeoutMs: 60_000 },
       });
     });
+  });
+
+  it("carries a workspace draft into the structured task form", async () => {
+    const { client } = createClient({ trusted: true });
+    render(<App client={client} />);
+
+    const draft = await screen.findByLabelText("Draft a task from the workspace");
+    fireEvent.change(draft, { target: { value: "Create a softer review corner" } });
+    fireEvent.click(screen.getByRole("button", { name: "Draft task" }));
+
+    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Create a softer review corner");
+    expect((screen.getByLabelText("Goal") as HTMLTextAreaElement).value).toBe("Create a softer review corner");
   });
 
   it("reconstructs completed onboarding from queue, run, and human-review records", async () => {
@@ -388,5 +410,25 @@ describe("App", () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("export_diagnostic_bundle"));
     expect(await screen.findByText(/Saved kruon-diagnostics-.* in Downloads/i)).toBeDefined();
     expect(screen.getByText(/no prompts, projects, paths, credentials, or raw logs/i)).toBeDefined();
+  });
+
+  it("requires fresh consent before every local aggregate Alpha metrics export", async () => {
+    const { client, invoke } = createClient({ trusted: true, tasks: [task], runs: [completedRun] });
+    render(<App client={client} />);
+
+    const button = await screen.findByRole("button", { name: "Export consented Alpha metrics" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    expect(invoke).not.toHaveBeenCalledWith("export_alpha_metrics", expect.anything());
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /I consent to this one local export/i }));
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("export_alpha_metrics", { consented: true });
+    });
+    expect(await screen.findByText(/Saved kruon-alpha-metrics-.* in Downloads/i)).toBeDefined();
+    expect(screen.getByText(/does not create a participant identifier/i)).toBeDefined();
+    expect((screen.getByRole("checkbox", { name: /I consent to this one local export/i }) as HTMLInputElement).checked).toBe(false);
   });
 });

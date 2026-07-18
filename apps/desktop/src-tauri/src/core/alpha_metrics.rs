@@ -107,10 +107,11 @@ struct RateMetric {
 #[serde(rename_all = "camelCase")]
 struct AlphaMetricsPrivacy {
     aggregate_only: bool,
-    contains_identity: bool,
-    contains_workspace_or_task_text: bool,
-    contains_file_system_locations: bool,
-    contains_raw_events_or_logs: bool,
+    identity_included: bool,
+    workspace_or_task_text_included: bool,
+    file_system_locations_included: bool,
+    event_payloads_included: bool,
+    process_output_included: bool,
     automatic_upload: bool,
 }
 
@@ -178,8 +179,7 @@ pub(crate) fn export_alpha_metrics(
 
 fn build_bundle(source: AlphaMetricsSourceSnapshot) -> AlphaMetricsBundle {
     let sample = source.tasks.iter().find(|task| {
-        task.title == ONBOARDING_SAMPLE_TASK_TITLE
-            && task.context == ONBOARDING_SAMPLE_TASK_CONTEXT
+        task.title == ONBOARDING_SAMPLE_TASK_TITLE && task.context == ONBOARDING_SAMPLE_TASK_CONTEXT
     });
     let sample_queue = sample.and_then(|task| {
         source
@@ -225,8 +225,7 @@ fn build_bundle(source: AlphaMetricsSourceSnapshot) -> AlphaMetricsBundle {
         *runs_by_outcome.entry(key).or_default() += 1;
     }
 
-    let mut reviews_by_outcome =
-        BTreeMap::from([("accepted", 0usize), ("returned", 0usize)]);
+    let mut reviews_by_outcome = BTreeMap::from([("accepted", 0usize), ("returned", 0usize)]);
     for review in &source.reviews {
         let key = match review.status {
             TaskReviewStatus::Accepted => "accepted",
@@ -301,7 +300,10 @@ fn build_bundle(source: AlphaMetricsSourceSnapshot) -> AlphaMetricsBundle {
         },
         timing: TimingMetric {
             workspace_to_first_run_seconds: elapsed_seconds(
-                source.workspaces.iter().map(|item| item.created_at.as_str()),
+                source
+                    .workspaces
+                    .iter()
+                    .map(|item| item.created_at.as_str()),
                 source.runs.iter().map(|item| item.created_at.as_str()),
             ),
         },
@@ -311,10 +313,11 @@ fn build_bundle(source: AlphaMetricsSourceSnapshot) -> AlphaMetricsBundle {
         },
         privacy: AlphaMetricsPrivacy {
             aggregate_only: true,
-            contains_identity: false,
-            contains_workspace_or_task_text: false,
-            contains_file_system_locations: false,
-            contains_raw_events_or_logs: false,
+            identity_included: false,
+            workspace_or_task_text_included: false,
+            file_system_locations_included: false,
+            event_payloads_included: false,
+            process_output_included: false,
             automatic_upload: false,
         },
     }
@@ -340,7 +343,8 @@ fn elapsed_seconds<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::m1::{CompatibilityStatus, WorkspaceRecord};
+    use crate::core::m1::WorkspaceRecord;
+    use crate::core::m4::CompatibilityStatus;
 
     fn source() -> AlphaMetricsSourceSnapshot {
         let workspace = WorkspaceRecord {
@@ -474,5 +478,7 @@ mod tests {
         assert_eq!(value["consent"]["grantedForThisExport"], true);
         assert_eq!(value["consent"]["automaticUpload"], false);
         assert_eq!(value["privacy"]["aggregateOnly"], true);
+        assert_eq!(value["privacy"]["eventPayloadsIncluded"], false);
+        assert_eq!(value["privacy"]["processOutputIncluded"], false);
     }
 }

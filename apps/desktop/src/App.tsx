@@ -3,6 +3,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AdapterConnection,
   AdapterKind,
+  AlphaMetricsExportRecord,
   ApprovalRecord,
   AuditRecord,
   ArtifactRecord,
@@ -21,6 +22,7 @@ import {
   TaskReviewRecord,
   WorkspaceRecord,
 } from "./lib/kruon";
+import { CrewWorkspace } from "./CrewWorkspace";
 import "./App.css";
 
 const MAX_CONCURRENT_RUNS = 2;
@@ -70,6 +72,9 @@ export function App({ client = desktopClient }: AppProps) {
   const [diagnosticExport, setDiagnosticExport] = useState<DiagnosticExportRecord | null>(null);
   const [exportingDiagnostics, setExportingDiagnostics] = useState(false);
   const [creatingSample, setCreatingSample] = useState(false);
+  const [alphaMetricsConsent, setAlphaMetricsConsent] = useState(false);
+  const [alphaMetricsExport, setAlphaMetricsExport] = useState<AlphaMetricsExportRecord | null>(null);
+  const [exportingAlphaMetrics, setExportingAlphaMetrics] = useState(false);
 
   const refreshBoard = useCallback(async () => {
     const [nextWorkspaces, nextTasks, nextQueue, nextRuns, nextReviews] = await Promise.all([
@@ -182,6 +187,9 @@ export function App({ client = desktopClient }: AppProps) {
   const sampleReview = sampleTask
     ? reviews.find((review) => review.taskId === sampleTask.taskId) ?? null
     : null;
+  const terminalRuns = runs.filter((run) => run.terminalState !== null);
+  const completedRuns = terminalRuns.filter((run) => run.terminalState === "completed").length;
+  const reviewedTaskCount = new Set(reviews.map((review) => review.taskId)).size;
 
   async function createWorkspace(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -370,6 +378,15 @@ export function App({ client = desktopClient }: AppProps) {
     }
   }
 
+  function composeTaskFromWorkspace(draft: string) {
+    setTaskForm((current) => ({
+      ...current,
+      title: current.title || draft,
+      goal: current.goal || draft,
+    }));
+    window.setTimeout(() => document.getElementById("task-form-title")?.scrollIntoView?.({ behavior: "smooth", block: "start" }), 0);
+  }
+
   async function exportDiagnostics() {
     setExportingDiagnostics(true);
     try {
@@ -380,6 +397,23 @@ export function App({ client = desktopClient }: AppProps) {
       setError(publicMessage(cause));
     } finally {
       setExportingDiagnostics(false);
+    }
+  }
+
+  async function exportAlphaMetrics() {
+    if (!alphaMetricsConsent) return;
+    setExportingAlphaMetrics(true);
+    try {
+      const exported = await client.invoke<AlphaMetricsExportRecord>("export_alpha_metrics", {
+        consented: true,
+      });
+      setAlphaMetricsExport(exported);
+      setAlphaMetricsConsent(false);
+      setError(null);
+    } catch (cause) {
+      setError(publicMessage(cause));
+    } finally {
+      setExportingAlphaMetrics(false);
     }
   }
 
@@ -403,11 +437,6 @@ export function App({ client = desktopClient }: AppProps) {
         </div>
       </header>
 
-      <section className="m1-notice" aria-label="M3 projection boundaries">
-        <span>M3 optional world</span>
-        <p>The 3D window is a read-only projection of the same local run events. Closing it never removes 2D control, approval, cancellation, artifacts, or review; unverified per-action approval is not exposed.</p>
-      </section>
-
       {error ? (
         <>
           <section className="error-banner" role="alert">
@@ -422,6 +451,21 @@ export function App({ client = desktopClient }: AppProps) {
           />
         </>
       ) : null}
+
+      <CrewWorkspace
+        connections={connections}
+        runs={runs}
+        queue={queue}
+        tasks={tasks}
+        selectedRunId={selectedRunId}
+        onSelectRun={(runId) => void selectRun(runId)}
+        onComposeTask={composeTaskFromWorkspace}
+      />
+
+      <section className="m1-notice" aria-label="M3 projection boundaries">
+        <span>M3 optional world</span>
+        <p>The 3D window is a read-only projection of the same local run events. Closing it never removes 2D control, approval, cancellation, artifacts, or review; unverified per-action approval is not exposed.</p>
+      </section>
 
       <section
         className={`onboarding-panel ${sampleReview ? "complete" : ""}`}
@@ -512,6 +556,46 @@ export function App({ client = desktopClient }: AppProps) {
           )}
         </div>
         <p className="onboarding-boundary">Credentials and login remain inside the upstream CLI. Kruon stores no API keys, passwords, prompt bodies in diagnostics, or automatic acceptance decisions.</p>
+      </section>
+
+      <section className="alpha-readiness-panel" aria-labelledby="alpha-readiness-title">
+        <div className="onboarding-heading">
+          <div>
+            <p className="eyebrow">DEV-407 · local evidence</p>
+            <h2 id="alpha-readiness-title">Alpha readiness</h2>
+          </div>
+          <span className="subtle">this device only</span>
+        </div>
+        <div className="alpha-metric-grid">
+          <div><strong>{tasks.length}</strong><span>tasks</span></div>
+          <div><strong>{runs.length}</strong><span>runs</span></div>
+          <div><strong>{terminalRuns.length ? `${Math.round((completedRuns / terminalRuns.length) * 100)}%` : "—"}</strong><span>terminal success</span></div>
+          <div><strong>{tasks.length ? `${Math.round((reviewedTaskCount / tasks.length) * 100)}%` : "—"}</strong><span>task review coverage</span></div>
+        </div>
+        <label className="alpha-consent">
+          <input
+            type="checkbox"
+            checked={alphaMetricsConsent}
+            onChange={(event) => setAlphaMetricsConsent(event.target.checked)}
+          />
+          <span>I consent to this one local export of aggregate Alpha metrics. It contains no identity, participant ID, workspace/task/run ID, names, paths, prompts, logs, event payloads, or credentials.</span>
+        </label>
+        <div className="alpha-export-actions">
+          <button
+            className="button secondary"
+            type="button"
+            disabled={!backendReady || !alphaMetricsConsent || exportingAlphaMetrics}
+            onClick={() => void exportAlphaMetrics()}
+          >
+            {exportingAlphaMetrics ? "Exporting…" : "Export consented Alpha metrics"}
+          </button>
+          {alphaMetricsExport ? (
+            <p className="diagnostic-export-result" role="status">
+              Saved {alphaMetricsExport.fileName} in {alphaMetricsExport.savedIn === "downloads" ? "Downloads" : "Kruon app data"}; {alphaMetricsExport.taskCount} task(s), {alphaMetricsExport.runCount} run(s). Consent is reset after every export.
+            </p>
+          ) : null}
+        </div>
+        <p className="onboarding-boundary">Kruon does not create a participant identifier, persist this consent, send telemetry, or upload the file. Sharing it with the Alpha coordinator is a separate user action.</p>
       </section>
 
       <section className="dashboard-grid">
@@ -1042,6 +1126,10 @@ function errorRecovery(error: string): { code: string; title: string; message: s
       return { code, title: "Review the submitted fields", message: "Check required task text and relative allowed paths, correct the form, and retry." };
     case "diagnostic_export_failed":
       return { code, title: "Restore a safe export destination", message: "Check free space and write permission for Downloads and Kruon app data, then retry the metadata-only export." };
+    case "consent_required":
+      return { code, title: "Review and grant one-time consent", message: "Read the aggregate metrics scope, tick the consent box for this export, and retry. Kruon never persists consent or uploads automatically." };
+    case "alpha_metrics_export_failed":
+      return { code, title: "Restore the local metrics destination", message: "Check free space and write permission for Downloads and Kruon app data, then grant one-time consent and retry the aggregate export." };
     default:
       return { code, title: "Refresh before retrying", message: "Re-read durable local state. If the error repeats, export metadata-only diagnostics and retain the exact public error code for support." };
   }

@@ -180,6 +180,16 @@ export interface DiagnosticExportRecord {
   totalRuns: number;
 }
 
+export interface AlphaMetricsExportRecord {
+  fileName: string;
+  savedIn: "downloads" | "app_data";
+  byteCount: number;
+  sha256: string;
+  generatedAt: string;
+  taskCount: number;
+  runCount: number;
+}
+
 export type WorldAgentState =
   | "idle"
   | "planning"
