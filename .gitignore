@@ -6,3 +6,5 @@ target/
 *.log
 .DS_Store
 .vite/
+# Large reference media (see docs/reference/video-stills/ for extracted stills)
+参考.mp4
